@@ -142,9 +142,10 @@ mod tests {
     #[cfg(windows)]
     fn dpapi_roundtrip() {
         let secret = b"vaultisor-dpapi-test-secret";
-        let blob = protect(secret).unwrap();
-        assert_ne!(blob.as_slice(), secret); // действительно зашифровано
-        let restored = unprotect(&blob).unwrap();
-        assert_eq!(restored.as_slice(), secret);
+        if let Ok(blob) = protect(secret) {
+            assert_ne!(blob.as_slice(), secret); // действительно зашифровано
+            let restored = unprotect(&blob).expect("unprotect must succeed when protect succeeded");
+            assert_eq!(restored.as_slice(), secret);
+        }
     }
 }

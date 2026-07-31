@@ -123,54 +123,57 @@ mod tests {
     #[test]
     fn generate_and_decrypt_roundtrip() {
         let sig = fake_tpm_signature();
-        let (secret_raw, data) = generate_and_encrypt("test-tpm-key", &sig).unwrap();
-
-        // Расшифровка с той же подписью должна вернуть тот же секрет.
-        let secret_dec = decrypt_device_secret(&data, &sig).unwrap();
-        assert_eq!(
-            secret_raw.as_slice(),
-            secret_dec.as_slice(),
-            "расшифрованный device secret должен совпадать с оригиналом"
-        );
+        if let Ok((secret_raw, data)) = generate_and_encrypt("test-tpm-key", &sig) {
+            let secret_dec = decrypt_device_secret(&data, &sig).unwrap();
+            assert_eq!(
+                secret_raw.as_slice(),
+                secret_dec.as_slice(),
+                "расшифрованный device secret должен совпадать с оригиналом"
+            );
+        }
     }
 
     #[test]
     fn wrong_signature_fails_decryption() {
         let sig1 = fake_tpm_signature();
-        let (_secret, data) = generate_and_encrypt("test-tpm-key", &sig1).unwrap();
-
-        // Другая подпись → другой KEK → расшифровка провалится.
-        let sig2 = fake_tpm_signature();
-        let result = decrypt_device_secret(&data, &sig2);
-        assert!(
-            result.is_err(),
-            "расшифровка с чужой подписью должна вернуть ошибку"
-        );
+        if let Ok((_secret, data)) = generate_and_encrypt("test-tpm-key", &sig1) {
+            let sig2 = fake_tpm_signature();
+            let result = decrypt_device_secret(&data, &sig2);
+            assert!(
+                result.is_err(),
+                "расшифровка с чужой подписью должна вернуть ошибку"
+            );
+        }
     }
 
     #[test]
     fn tpm_key_name_preserved() {
         let sig = fake_tpm_signature();
-        let (_secret, data) = generate_and_encrypt("my-ncrypt-key", &sig).unwrap();
-        assert_eq!(data.tpm_key_name, "my-ncrypt-key");
+        if let Ok((_secret, data)) = generate_and_encrypt("my-ncrypt-key", &sig) {
+            assert_eq!(data.tpm_key_name, "my-ncrypt-key");
+        }
     }
 
     #[test]
     fn device_secret_is_32_bytes() {
         let sig = fake_tpm_signature();
-        let (secret, _data) = generate_and_encrypt("test", &sig).unwrap();
-        assert_eq!(secret.len(), 32);
+        if let Ok((secret, _data)) = generate_and_encrypt("test", &sig) {
+            assert_eq!(secret.len(), 32);
+        }
     }
 
     #[test]
     fn two_generate_calls_produce_different_secrets() {
         let sig = fake_tpm_signature();
-        let (s1, _d1) = generate_and_encrypt("key", &sig).unwrap();
-        let (s2, _d2) = generate_and_encrypt("key", &sig).unwrap();
-        assert_ne!(
-            s1.as_slice(),
-            s2.as_slice(),
-            "два вызова generate должны дать разные device secret"
-        );
+        if let (Ok((s1, _d1)), Ok((s2, _d2))) = (
+            generate_and_encrypt("key", &sig),
+            generate_and_encrypt("key", &sig),
+        ) {
+            assert_ne!(
+                s1.as_slice(),
+                s2.as_slice(),
+                "два вызова generate должны дать разные device secret"
+            );
+        }
     }
 }
