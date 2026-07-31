@@ -296,7 +296,8 @@ mod tests {
 
         // Создаём БД ключом A и закрываем.
         {
-            let _db = RecordsDb::open(&path, &key_a).unwrap();
+            let db = RecordsDb::open(&path, &key_a).unwrap();
+            drop(db);
         }
 
         // Неверный ключ B — open обязан упасть.
