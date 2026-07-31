@@ -49,7 +49,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {/* Toast-стак рендерится сверху по центру, поверх любых sheets/modal'ов
           через высокий z-index. Это гарантирует видимость над окнами Hello-prompt
           и системными подсказками, которые перекрывают нижнюю часть экрана. */}
-      <div className="fixed top-1.5 left-1/2 z-[1000] -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none max-w-[280px] w-full px-2">
+      <div className="fixed top-[50px] left-1/2 z-[1000] -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none max-w-[280px] w-full px-2">
         {items.map((t) => (
           <ToastView key={t.id} item={t} onClose={() => remove(t.id)} />
         ))}
