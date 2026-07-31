@@ -378,6 +378,10 @@ pub fn recovery_load_from_usb(input: LoadFromUsbInput) -> Result<ShareReadOutput
 }
 
 fn parse_share_hex(s: &str) -> Result<Share> {
+    let s = s.trim();
+    if s.contains("vaultisor-share-v1") || s.contains("x:") {
+        return usb::parse_share_text(s);
+    }
     let mut parts = s.splitn(2, '|');
     let x_str = parts
         .next()
@@ -391,5 +395,8 @@ fn parse_share_hex(s: &str) -> Result<Share> {
         .map_err(|_| VaultError::Recovery("share format: invalid x".into()))?;
     let y = hex::decode(y_hex.trim())
         .map_err(|_| VaultError::Recovery("share format: bad hex".into()))?;
+    if x == 0 || y.is_empty() {
+        return Err(VaultError::Recovery("share format: invalid share value".into()));
+    }
     Ok(Share { x, y })
 }
