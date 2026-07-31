@@ -37,7 +37,6 @@ jobs:
         run: powershell -ExecutionPolicy Bypass -File .\build.ps1 -SkipDeps
 
       - name: Submit to SignPath for Signing
-        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
         uses: signpath/github-action-submit-signing-request@v1
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
