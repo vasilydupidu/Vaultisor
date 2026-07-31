@@ -1,0 +1,72 @@
+name: Release & Sign
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build, Sign & Release Vaultisor
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install NASM
+        uses: ilammy/setup-nasm@v1
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Portable Executable
+        run: powershell -ExecutionPolicy Bypass -File .\build.ps1 -SkipDeps
+
+      - name: Submit to SignPath for Signing (if token configured)
+        if: env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: 'vaultisor'
+          signing-policy-slug: 'release-signing'
+          artifact-path: 'release/Vaultisor.exe'
+          output-artifact-path: 'release/Vaultisor-signed.exe'
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+
+      - name: Use Signed Binary if Available
+        shell: powershell
+        run: |
+          if (Test-Path "release/Vaultisor-signed.exe") {
+            Copy-Item -Force "release/Vaultisor-signed.exe" "release/Vaultisor.exe"
+          }
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/Vaultisor.exe
+          body: |
+            ## Vaultisor ${{ github.ref_name }} 🛡️
+            
+            Локальный автономный менеджер паролей и технических секретов для Windows.
+            
+            ### Возможности и улучшения:
+            - 🌐 Авто-извлечение корневых доменов (`openai.com`, `google.com`).
+            - 👁️ Раскрытие открытых полей (Логин, URL, Заметки) без маскировки.
+            - 🗑️ Массовый выбор записей и удаление в 1 клик (Batch Delete).
+            - 🔔 Компактные всплывающие уведомления в верхней шапке.
+            - 🔑 Аппаратная привязка TPM 2.0 + Windows Hello и SQLCipher шифрование.
+          draft: false
+          prerelease: false

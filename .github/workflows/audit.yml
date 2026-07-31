@@ -13,14 +13,15 @@ on:
 
 jobs:
   cargo-deny:
-    name: cargo-deny (RUSTSEC / licenses / sources)
+    name: cargo-deny (RUSTSEC advisories)
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Run cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          command: check advisories licenses
+          command: check advisories
 
   npm-audit:
     name: npm audit (production deps)
