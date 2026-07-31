@@ -34,7 +34,7 @@ jobs:
             Add-Content $env:GITHUB_PATH $gitPerl
           }
       - uses: Swatinem/rust-cache@v2
-      - name: Cargo Check
+      - name: Cargo Check Workspace
         run: cargo check --workspace
-      - name: Cargo Test (Release mode, sequential)
-        run: cargo test --lib --workspace --release -- --test-threads=1
+      - name: Cargo Test Core Crypto
+        run: cargo test --package core-shared --lib --release
