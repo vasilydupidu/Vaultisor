@@ -27,14 +27,17 @@ jobs:
       - name: Install NASM
         uses: ilammy/setup-nasm@v1
 
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Install Dependencies
         run: npm install
 
       - name: Build Portable Executable
         run: powershell -ExecutionPolicy Bypass -File .\build.ps1 -SkipDeps
 
-      - name: Submit to SignPath for Signing (if token configured)
-        if: env.SIGNPATH_API_TOKEN != ''
+      - name: Submit to SignPath for Signing
+        if: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
         uses: signpath/github-action-submit-signing-request@v1
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -43,8 +46,6 @@ jobs:
           signing-policy-slug: 'release-signing'
           artifact-path: 'release/Vaultisor.exe'
           output-artifact-path: 'release/Vaultisor-signed.exe'
-        env:
-          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
 
       - name: Use Signed Binary if Available
         shell: powershell
@@ -70,3 +71,5 @@ jobs:
             - 🔑 Аппаратная привязка TPM 2.0 + Windows Hello и SQLCipher шифрование.
           draft: false
           prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
