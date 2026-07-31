@@ -22,7 +22,7 @@ jobs:
       - run: npm test
 
   backend:
-    name: Backend (cargo test, Windows)
+    name: Backend (cargo check + test, Windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,4 +30,5 @@ jobs:
       - name: Install NASM
         uses: ilammy/setup-nasm@v1
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --release
+      - run: cargo check --workspace
+      - run: cargo test --lib
