@@ -29,6 +29,11 @@ jobs:
       - name: Ensure Perl in PATH
         shell: bash
         run: echo "C:/Program Files/Git/usr/bin" >> $GITHUB_PATH
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npm run build
       - uses: Swatinem/rust-cache@v2
       - name: Cargo Check Workspace
         run: cargo check --workspace
