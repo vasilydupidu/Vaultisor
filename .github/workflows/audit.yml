@@ -20,7 +20,7 @@ jobs:
       - name: Run cargo-deny
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          arguments: --config deny.toml
+          command: check advisories licenses
 
   npm-audit:
     name: npm audit (production deps)

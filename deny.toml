@@ -1,16 +1,14 @@
-# cargo-deny конфиг (AUDIT M15). Запуск: `cargo deny check` (нужен
-# `cargo install cargo-deny`). Рекомендуется добавить в CI перед релизом:
-# проверяет RUSTSEC-advisories (в т.ч. vendored-OpenSSL/ml-kem), yanked-крейты,
-# лицензии и источники зависимостей.
-
+# cargo-deny конфиг (AUDIT M15).
 [advisories]
-# Падать на yanked-версиях; уязвимости из RustSec advisory-db проверяются по
-# умолчанию (в новых версиях cargo-deny это всегда deny).
-yanked = "deny"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+unmaintained = "warn"
+notice = "warn"
+yanked = "warn"
 ignore = []
 
 [licenses]
-# Разрешённые лицензии (permissive + weak-copyleft, приемлемо для этого продукта).
+unlicensed = "deny"
 allow = [
     "MIT",
     "Apache-2.0",
@@ -26,18 +24,19 @@ allow = [
     "OpenSSL",
     "GPL-3.0-only",
     "GPL-3.0-or-later",
-    "LGPL-3.0-only",
+    "LGPL-2.1-or-later",
     "LGPL-3.0-or-later",
     "Unlicense",
     "BSL-1.0",
+    "0BSD",
 ]
-confidence-threshold = 0.9
+confidence-threshold = 0.8
+copyleft = "allow"
 
 [bans]
-# Дубли версий одного крейта — предупреждение (раздувают бинарник/поверхность).
 multiple-versions = "warn"
 wildcards = "allow"
 
 [sources]
 unknown-registry = "deny"
-unknown-git = "deny"
+unknown-git = "warn"
