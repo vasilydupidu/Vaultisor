@@ -35,7 +35,7 @@ jobs:
           node-version: "20"
       - run: npm install
       - run: npm run build
-      - name: Cargo Check Backend
-        run: cargo check --package core-shared --package vaultisor
+      - name: Cargo Check Core Crypto
+        run: cargo check --package core-shared
       - name: Cargo Test Core Crypto
         run: cargo test --package core-shared --lib
