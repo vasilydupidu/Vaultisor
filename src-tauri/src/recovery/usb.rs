@@ -43,7 +43,7 @@ pub fn parse_share_text(s: &str) -> Result<Share> {
         if line.contains('|') {
             if let Ok(share) = parse_line_pipe(line) {
                 x = Some(share.x);
-                y = Some(share.y);
+                y = Some(share.y.clone());
             }
         } else if let Some(rest) = line.strip_prefix("x:") {
             x = rest.trim().parse().ok();
