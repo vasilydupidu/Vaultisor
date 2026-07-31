@@ -26,8 +26,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install NASM
         uses: ilammy/setup-nasm@v1
+      - name: Ensure Perl in PATH
+        shell: powershell
+        run: |
+          $gitPerl = "C:\Program Files\Git\usr\bin"
+          if (Test-Path $gitPerl) {
+            Add-Content $env:GITHUB_PATH $gitPerl
+          }
       - uses: Swatinem/rust-cache@v2
       - name: Cargo Check
         run: cargo check --workspace
-      - name: Cargo Test (Release mode for fast Argon2 KDF)
+      - name: Cargo Test (Release mode)
         run: cargo test --lib --workspace --release
