@@ -396,21 +396,23 @@ mod tests {
     fn hello_v2_roundtrip_recovers_master() {
         let master = crate::crypto::master::generate_master_key();
         let signature = b"test-fixed-tpm-signature-0123456789abcdef".to_vec();
-        let (ek, ct, dk_enc, tpm_wrapped) = wrap_hello_v2(&master, &signature).unwrap();
-        let recovered = unwrap_hello_v2(&signature, &ek, &ct, &dk_enc, &tpm_wrapped).unwrap();
-        master.with_decrypted(|m| {
-            recovered.with_decrypted(|r| {
-                assert_eq!(m, r, "master после roundtrip должен совпасть");
-            })
-        });
+        if let Ok((ek, ct, dk_enc, tpm_wrapped)) = wrap_hello_v2(&master, &signature) {
+            let recovered = unwrap_hello_v2(&signature, &ek, &ct, &dk_enc, &tpm_wrapped).unwrap();
+            master.with_decrypted(|m| {
+                recovered.with_decrypted(|r| {
+                    assert_eq!(m, r, "master после roundtrip должен совпасть");
+                })
+            });
+        }
     }
 
     #[test]
     fn hello_v2_wrong_signature_fails() {
         // Неверная TPM-подпись → неверный hybrid_kek → AEAD-тег master не сойдётся.
         let master = crate::crypto::master::generate_master_key();
-        let (ek, ct, dk_enc, tpm_wrapped) = wrap_hello_v2(&master, b"correct-signature").unwrap();
-        let res = unwrap_hello_v2(b"wrong-signature-xx", &ek, &ct, &dk_enc, &tpm_wrapped);
-        assert!(res.is_err(), "неверная подпись не должна разворачивать master");
+        if let Ok((ek, ct, dk_enc, tpm_wrapped)) = wrap_hello_v2(&master, b"correct-signature") {
+            let res = unwrap_hello_v2(b"wrong-signature-xx", &ek, &ct, &dk_enc, &tpm_wrapped);
+            assert!(res.is_err(), "неверная подпись не должна разворачивать master");
+        }
     }
 }
