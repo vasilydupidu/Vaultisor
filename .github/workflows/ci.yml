@@ -1,8 +1,5 @@
 name: CI
 
-# Сборка и тесты. Backend (SQLCipher + windows-crate) — только на Windows;
-# frontend (tsc + vitest) — на Ubuntu.
-
 on:
   push:
     branches: [main, master]
@@ -11,7 +8,7 @@ on:
 jobs:
   frontend:
     name: Frontend (typecheck + vitest)
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,19 +18,8 @@ jobs:
       - run: npm run lint
       - run: npm test
 
-  backend-test:
-    name: Backend Unit Tests (Linux)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install NASM
-        run: sudo apt-get update && sudo apt-get install -y nasm
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace
-
-  backend-check:
-    name: Backend Build Check (Windows)
+  backend:
+    name: Backend (cargo check + unit tests)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,4 +27,7 @@ jobs:
       - name: Install NASM
         uses: ilammy/setup-nasm@v1
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace
+      - name: Cargo Check
+        run: cargo check --workspace
+      - name: Cargo Test
+        run: cargo test --lib --workspace
