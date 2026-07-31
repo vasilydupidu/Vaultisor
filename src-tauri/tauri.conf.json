@@ -1,0 +1,83 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0",
+  "productName": "Vaultisor",
+  "version": "2.5.0",
+  "identifier": "io.vaultisor.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Vaultisor",
+        "width": 360,
+        "height": 640,
+        "minWidth": 320,
+        "minHeight": 568,
+        "maxWidth": 420,
+        "maxHeight": 780,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "focus": true,
+        "center": true,
+        "skipTaskbar": false,
+        "theme": "Dark",
+        "titleBarStyle": "Visible",
+        "visible": false,
+        "shadow": true,
+        "windowEffects": null,
+        "devtools": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost http://tauri.localhost https://tauri.localhost; font-src 'self' data:; base-uri 'self'; object-src 'none'; form-action 'self'",
+      "freezePrototype": false,
+      "assetProtocol": {
+        "enable": false,
+        "scope": []
+      }
+    },
+    "trayIcon": null,
+    "macOSPrivateApi": false
+  },
+  "bundle": {
+    "active": false,
+    "targets": ["nsis", "msi"],
+    "publisher": "Vaultisor",
+    "category": "DeveloperTool",
+    "shortDescription": "Локальное защищённое хранилище секретов",
+    "longDescription": "Vaultisor — портативное локальное хранилище API-ключей, токенов и других технических секретов. Шифрование AES-256-GCM, привязка к устройству через DPAPI, восстановление через Shamir 2-of-3.",
+    "copyright": "Copyright © 2026 Vaultisor",
+    "licenseFile": null,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "resources": [],
+    "externalBin": [],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "wix": {
+        "language": ["ru-RU", "en-US"]
+      },
+      "nsis": {
+        "languages": ["Russian", "English"],
+        "installMode": "perMachine",
+        "displayLanguageSelector": true
+      }
+    }
+  },
+  "plugins": {}
+}

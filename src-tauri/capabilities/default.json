@@ -1,0 +1,27 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Базовый набор разрешений Vaultisor. Минимум возможного — никаких сетевых разрешений.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-set-size",
+    "core:window:allow-set-min-size",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-minimize",
+    "core:window:allow-close",
+    "core:app:default",
+    "core:event:default",
+    "core:path:default",
+    "clipboard-manager:default",
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-clear",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "core:webview:default",
+    "os:default"
+  ]
+}

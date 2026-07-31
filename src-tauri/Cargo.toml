@@ -1,0 +1,130 @@
+[package]
+name = "vaultisor"
+version = "2.5.0"
+description = "Vaultisor — local secure vault for technical secrets"
+authors = ["Vaultisor"]
+edition = "2021"
+rust-version = "1.77"
+
+# Релизный бинарник — максимальная оптимизация по размеру и скорости.
+# Для портативного .exe это критично.
+[profile.release]
+opt-level = "z"        # Минимальный размер
+lto = true             # Link-time optimization
+codegen-units = 1
+panic = "abort"
+strip = true
+incremental = false
+
+[lib]
+name = "vaultisor_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+# === Tauri core ===
+# AUDIT M12: `devtools` УБРАН из релизных фич — иначе инспектор WebView
+# компилировался в прод-бинарник (CWE-489). Для отладки: сборка с
+# `--features devtools` (см. [features] ниже).
+tauri = { version = "2.1", features = ["tray-icon"] }
+tauri-plugin-clipboard-manager = "2.2"
+tauri-plugin-dialog = "2.2"
+tauri-plugin-fs = "2.2"
+tauri-plugin-os = "2.2"
+# Один экземпляр приложения: повторный запуск .exe не стартует второй процесс,
+# а фокусирует уже открытое окно (desktop-only).
+tauri-plugin-single-instance = "2.2"
+
+# === Сериализация ===
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# === Логирование (минимальное, без отправки куда-либо) ===
+log = "0.4"
+tauri-plugin-log = "2.2"
+
+# === Криптография ===
+aes-gcm = { version = "0.10", features = ["aes", "alloc"] }
+argon2 = { version = "0.5", features = ["std"] }
+sha2 = "0.10"
+hmac = "0.12"
+zeroize = { version = "1.8", features = ["derive"] }
+rand = "0.8"
+rand_chacha = "0.3"
+subtle = "2.6"
+hex = "0.4"
+base64 = "0.22"
+
+# Post-quantum KEM (NIST FIPS 203, ML-KEM-768 — RustCrypto implementation).
+# Используется для гибридного Hello-пути: HKDF(RSA_sig || ML-KEM_shared_secret).
+# AUDIT M14: crate pre-1.0 и без формального аудита — незрелость 3rd-party.
+# Риск смягчён ГИБРИДОМ: дефект ML-KEM деградирует к классической стойкости,
+# а не к полному провалу. Держим на 0.2.x, отслеживаем релизы к 1.0.
+ml-kem = "0.2"
+
+# === Хранилище ===
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+# SQLCipher (форк SQLite с прозрачным шифрованием страниц AES-256-CBC + HMAC-SHA512).
+# vendored-openssl собирает OpenSSL из исходников — требует Perl + NASM на хосте.
+# Используется ТОЛЬКО для records-БД (записи + поля); meta-БД хранится открытой,
+# чтобы recovery-cascade мог прочитать wrapped_master_key до разворачивания
+# SQLCipher-ключа.
+
+# === Утилиты ===
+thiserror = "2.0"
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.11", features = ["v4", "serde"] }
+once_cell = "1.20"
+parking_lot = "0.12"
+# tokio: нужен для async-команд Tauri (vault_create / recovery_restore →
+# Windows Hello / TPM async-подпись). Сетевые крейты (axum/rustls/rcgen/
+# tower-http) удалены; PWA и QR-перенос на телефон удалены полностью —
+# продукт полностью локальный, без сетевой поверхности.
+tokio = { version = "1.52.3", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
+core-shared = { path = "../core-shared" }
+
+# === Windows-only API ===
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_System_Memory",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Threading",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Power",
+    "Win32_System_DataExchange",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_StationsAndDesktops",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    # TBS — определение версии TPM (2.0 vs 1.x) для гейта Device Secret.
+    "Win32_System_TpmBaseServices",
+    # WinRT для Windows Hello (UserConsentVerifier + KeyCredentialManager).
+    "Foundation",
+    "Security_Credentials",
+    "Security_Credentials_UI",
+    "Storage_Streams",
+    # CNG для проверки наличия TPM-провайдера.
+    "Win32_Security_Cryptography_Catalog",
+    # Interop: IUserConsentVerifierInterop для HWND-привязки Hello prompt.
+    "Win32_System_WinRT",
+] }
+windows-core = "0.62"
+windows-future = "0.3"
+
+[features]
+# По умолчанию — продакшн-флаги.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+devtools = ["tauri/devtools"]
+
+[dev-dependencies]
+proptest = "1.5"
+tempfile = "3.13"

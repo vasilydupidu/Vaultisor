@@ -1,0 +1,34 @@
+name: CI
+
+# Сборка и тесты. Backend (SQLCipher + windows-crate) — только на Windows;
+# frontend (tsc + vitest) — на Ubuntu.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  frontend:
+    name: Frontend (typecheck + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  backend:
+    name: Backend (cargo test, Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install NASM (для vendored-OpenSSL / SQLCipher)
+        uses: ilammy/setup-nasm@v1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace

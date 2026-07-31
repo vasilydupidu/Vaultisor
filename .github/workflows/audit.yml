@@ -1,0 +1,36 @@
+name: Supply-chain audit
+
+# SCA-проверки зависимостей (RUSTSEC + npm) на каждый push/PR и еженедельно.
+# Закрывает M-08: раньше cargo-deny / npm audit были только рекомендацией,
+# теперь выполняются автоматически и блокируют мёрж при уязвимостях.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # каждый понедельник 06:00 UTC
+
+jobs:
+  cargo-deny:
+    name: cargo-deny (RUSTSEC / licenses / sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses sources bans
+
+  npm-audit:
+    name: npm audit (production deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      # Падаем только на high/critical в production-зависимостях, чтобы шум
+      # dev-зависимостей не блокировал релиз.
+      - run: npm audit --omit=dev --audit-level=high

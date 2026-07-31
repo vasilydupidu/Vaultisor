@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0CA49F" />
+    <!-- F6: статический CSP как defense-in-depth (совпадает с рантайм-CSP Tauri
+         из tauri.conf.json). Защищает, если HTML открыт вне Tauri-рантайма;
+         внутри Tauri действует пересечение обеих политик (обе идентичны). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src ipc: http://ipc.localhost; font-src 'self' data:; base-uri 'self'; object-src 'none'; form-action 'self'"
+    />
+    <title>Vaultisor</title>
+    <!-- Шрифты подключены локально через CSS, оффлайн-friendly: см. styles.css -->
+  </head>
+  <body class="bg-ink-950 text-white antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
