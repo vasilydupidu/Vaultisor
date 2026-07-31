@@ -6,15 +6,6 @@ authors = ["Vaultisor"]
 edition = "2021"
 rust-version = "1.77"
 
-# Релизный бинарник — максимальная оптимизация по размеру и скорости.
-# Для портативного .exe это критично.
-[profile.release]
-opt-level = "z"        # Минимальный размер
-lto = true             # Link-time optimization
-codegen-units = 1
-panic = "abort"
-strip = true
-incremental = false
 
 [lib]
 name = "vaultisor_lib"
