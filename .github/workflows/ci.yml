@@ -27,12 +27,8 @@ jobs:
       - name: Install NASM
         uses: ilammy/setup-nasm@v1
       - name: Ensure Perl in PATH
-        shell: powershell
-        run: |
-          $gitPerl = "C:\Program Files\Git\usr\bin"
-          if (Test-Path $gitPerl) {
-            Add-Content $env:GITHUB_PATH $gitPerl
-          }
+        shell: bash
+        run: echo "C:/Program Files/Git/usr/bin" >> $GITHUB_PATH
       - uses: Swatinem/rust-cache@v2
       - name: Cargo Check Workspace
         run: cargo check --workspace
