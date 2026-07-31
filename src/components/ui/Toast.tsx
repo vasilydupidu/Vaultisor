@@ -49,7 +49,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {/* Toast-стак рендерится сверху по центру, поверх любых sheets/modal'ов
           через высокий z-index. Это гарантирует видимость над окнами Hello-prompt
           и системными подсказками, которые перекрывают нижнюю часть экрана. */}
-      <div className="fixed top-[50px] left-1/2 z-[1000] -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none max-w-[280px] w-full px-2">
+      <div className="fixed top-1 left-1/2 z-[1000] -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none max-w-[220px] w-full px-1">
         {items.map((t) => (
           <ToastView key={t.id} item={t} onClose={() => remove(t.id)} />
         ))}
@@ -77,7 +77,7 @@ function ToastView({ item, onClose }: { item: ToastItem; onClose: () => void }) 
   return (
     <div
       className={cn(
-        "card-elevated pointer-events-auto px-2.5 py-1.5 max-w-[280px] w-full flex items-center gap-2 animate-fade-in-up border border-white/10 bg-black/90 backdrop-blur-md rounded-lg shadow-xl",
+        "card-elevated pointer-events-auto px-2 py-1 max-w-[220px] w-full flex items-center gap-1.5 animate-fade-in-up border border-white/10 bg-black/90 backdrop-blur-md rounded-md shadow-lg h-7",
       )}
     >
       <Icon className={cn("h-3.5 w-3.5 shrink-0", color)} />
@@ -87,7 +87,7 @@ function ToastView({ item, onClose }: { item: ToastItem; onClose: () => void }) 
         aria-label={t('common.close')}
         className="text-white/40 hover:text-white/80 transition-app shrink-0 ml-0.5"
       >
-        <X className="h-3.5 w-3.5" />
+        <X className="h-3 w-3" />
       </button>
     </div>
   );
