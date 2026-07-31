@@ -36,41 +36,6 @@ jobs:
       - name: Build Portable Executable
         run: powershell -ExecutionPolicy Bypass -File .\build.ps1 -SkipDeps
 
-      - name: Upload unsigned artifact for SignPath
-        id: upload-artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: unsigned-exe
-          path: release/Vaultisor.exe
-
-      - name: Submit to SignPath for Signing
-        uses: signpath/github-action-submit-signing-request@v1
-        continue-on-error: true
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: 'vaultisor'
-          signing-policy-slug: 'release-signing'
-          github-artifact-id: ${{ steps.upload-artifact.outputs.artifact-id }}
-
-      - name: Download signed artifact from SignPath
-        uses: actions/download-artifact@v4
-        with:
-          name: signed-exe
-          path: release-signed
-        continue-on-error: true
-
-      - name: Use Signed Binary if Available
-        shell: powershell
-        run: |
-          if (Test-Path "release-signed") {
-            $signed = Get-ChildItem -Path "release-signed" -Filter "*.exe" -Recurse | Select-Object -First 1
-            if ($signed) {
-              Copy-Item -Force $signed.FullName "release/Vaultisor.exe"
-              Write-Host "Successfully replaced with signed executable!"
-            }
-          }
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
