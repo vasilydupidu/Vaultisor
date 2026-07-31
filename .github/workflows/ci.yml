@@ -36,5 +36,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Cargo Check
         run: cargo check --workspace
-      - name: Cargo Test (Release mode)
-        run: cargo test --lib --workspace --release
+      - name: Cargo Test (Release mode, sequential)
+        run: cargo test --lib --workspace --release -- --test-threads=1
