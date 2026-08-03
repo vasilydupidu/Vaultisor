@@ -39,7 +39,9 @@ jobs:
       - name: Sign Executable with SignPath PowerShell Module
         shell: powershell
         run: |
-          Install-Module -Name SignPathClient -Force -Scope CurrentUser
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
+          Install-Module -Name SignPathClient -Force -Scope CurrentUser -AllowClobber
           Submit-SigningRequest `
             -InputArtifactPath "release/Vaultisor.exe" `
             -ApiToken "${{ secrets.SIGNPATH_API_TOKEN }}" `
