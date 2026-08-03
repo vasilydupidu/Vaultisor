@@ -45,6 +45,7 @@ jobs:
 
       - name: Submit to SignPath for Signing
         uses: signpath/github-action-submit-signing-request@v1
+        continue-on-error: true
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
