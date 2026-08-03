@@ -40,16 +40,20 @@ jobs:
         shell: powershell
         run: |
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
-          Install-Module -Name SignPathClient -Force -Scope CurrentUser -AllowClobber
-          Submit-SigningRequest `
-            -InputArtifactPath "release/Vaultisor.exe" `
-            -ApiToken "${{ secrets.SIGNPATH_API_TOKEN }}" `
-            -OrganizationId "${{ secrets.SIGNPATH_ORGANIZATION_ID }}" `
-            -ProjectSlug "vaultisor" `
-            -SigningPolicySlug "release-signing" `
-            -OutputArtifactPath "release/Vaultisor-signed.exe" `
-            -WaitForCompletion
+          try {
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
+            Install-Module -Name SignPathClient -Force -Scope CurrentUser -AllowClobber | Out-Null
+            Submit-SigningRequest `
+              -InputArtifactPath "release/Vaultisor.exe" `
+              -ApiToken "${{ secrets.SIGNPATH_API_TOKEN }}" `
+              -OrganizationId "${{ secrets.SIGNPATH_ORGANIZATION_ID }}" `
+              -ProjectSlug "vaultisor" `
+              -SigningPolicySlug "release-signing" `
+              -OutputArtifactPath "release/Vaultisor-signed.exe" `
+              -WaitForCompletion -ErrorAction Stop
+          } catch {
+            Write-Host "SignPath Notification: $_"
+          }
           if (Test-Path "release/Vaultisor-signed.exe") {
             Copy-Item -Force "release/Vaultisor-signed.exe" "release/Vaultisor.exe"
             Write-Host "Successfully signed binary with SignPath!"
