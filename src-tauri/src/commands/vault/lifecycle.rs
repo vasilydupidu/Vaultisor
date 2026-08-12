@@ -150,6 +150,7 @@ pub async fn vault_unlock_with_hello(
 pub struct LockInfo {
     pub use_windows_hello: bool,
     pub hello_blob_present: bool,
+    pub fido2_enabled: bool,
 }
 
 #[tauri::command]
@@ -159,6 +160,7 @@ pub fn vault_lock_info(state: State<'_, AppState>) -> Result<LockInfo> {
         return Ok(LockInfo {
             use_windows_hello: false,
             hello_blob_present: false,
+            fido2_enabled: false,
         });
     }
     let db = state.open_meta()?;
@@ -168,16 +170,100 @@ pub fn vault_lock_info(state: State<'_, AppState>) -> Result<LockInfo> {
             return Ok(LockInfo {
                 use_windows_hello: false,
                 hello_blob_present: false,
+                fido2_enabled: false,
             })
         }
     };
-    // SECURITY: hello_blob_present считаем true ТОЛЬКО при наличии TPM-обёртки.
-    // hello_wrapped_key (legacy DPAPI) больше не используется для разблокировки —
-    // это закрытая уязвимость к stealer-malware (см. SECURITY.md).
+    let (fido2_enabled, _, _) = db.get_fido2_status().unwrap_or((false, None, None));
     Ok(LockInfo {
         use_windows_hello: meta.use_windows_hello,
         hello_blob_present: meta.tpm_wrapped_key.is_some(),
+        fido2_enabled,
     })
+}
+
+#[tauri::command]
+pub async fn vault_unlock_with_fido2(
+    state: State<'_, AppState>,
+    _app: tauri::AppHandle,
+) -> Result<()> {
+    let db = state.open_meta()?;
+    let keys = db.get_fido2_keys().unwrap_or_default();
+    let (enabled, cred_id_legacy, wrapped_legacy) = db.get_fido2_status().unwrap_or((false, None, None));
+
+    let mut key_tuples: Vec<(Vec<u8>, Vec<u8>, bool)> = keys
+        .into_iter()
+        .map(|k| (k.credential_id, k.fido2_wrapped_key, k.require_pin))
+        .collect();
+
+    if key_tuples.is_empty() {
+        if let (Some(cid), Some(wr)) = (cred_id_legacy, wrapped_legacy) {
+            key_tuples.push((cid, wr, true)); // legacy keys default to require_pin=true
+        }
+    }
+
+    if key_tuples.is_empty() || (!enabled && key_tuples.is_empty()) {
+        return Err(VaultError::BadInput("Физический FIDO2-ключ не привязан".into()));
+    }
+
+    let integrity_key_dpapi = db
+        .get_integrity_key_dpapi()?
+        .ok_or(VaultError::DeviceMismatch)?;
+    let integrity_key = unwrap_integrity_key(&integrity_key_dpapi)?;
+    db.verify_meta_integrity(&*integrity_key)?;
+
+    let meta = db.vault_load()?.ok_or(VaultError::NotInitialized)?;
+    if meta.failed_pin_attempts >= meta.max_pin_attempts {
+        return Err(VaultError::TooManyAttempts);
+    }
+
+    // 1. Собираем список всех зарегистрированных Credential ID
+    let all_cred_ids: Vec<Vec<u8>> = key_tuples.iter().map(|(cid, _, _)| cid.clone()).collect();
+    // Определяем require_pin: если хотя бы один ключ — PIN, используем PIN режим.
+    // Если все ключи touch-only, используем touch-only.
+    let any_require_pin = key_tuples.iter().any(|(_, _, rp)| *rp);
+
+    // 2. Вызываем окно WebAuthn с передачей всех привязанных ключей
+    let matched_cid = tokio::task::spawn_blocking(move || {
+        crate::auth::fido2::assert_fido2_key_prompt(&all_cred_ids, any_require_pin)
+    })
+    .await
+    .map_err(|e| VaultError::BadInput(format!("ошибка вызова FIDO2: {e}")))?
+    ?;
+
+
+    // 3. Находим соответствующий wrapped_key для коснувшегося токена
+    let (_, fido2_wrapped_bytes, _) = key_tuples
+        .into_iter()
+        .find(|(cid, _, _)| cid == &matched_cid)
+        .ok_or_else(|| VaultError::BadInput("Ответный FIDO2-ключ не найден в локальном хранилище".into()))?;
+
+    // 4. Распаковываем master_key по KEK конкретного ключа
+    let fido2_kek = crate::crypto::kdf::hkdf_derive(&matched_cid, b"vaultisor:fido2-salt:v1", b"vaultisor:fido2-kek:v1", 32)?;
+    let mut kek_arr = [0u8; 32];
+    kek_arr.copy_from_slice(&fido2_kek);
+
+    let blob = crate::crypto::aead::EncryptedBlob::from_bytes(&fido2_wrapped_bytes)?;
+    let mut plaintext = crate::crypto::aead::decrypt(&kek_arr, &blob, b"vaultisor:fido2-wrap:v1")
+        .map_err(|_| VaultError::BadInput("Ошибка расшифровки FIDO2 ключа".into()))?;
+
+    if plaintext.len() != 32 {
+        zeroize::Zeroize::zeroize(&mut plaintext);
+        return Err(VaultError::Crypto("fido2-blob bad length".into()));
+    }
+
+    let mut key_buf = [0u8; 32];
+    key_buf.copy_from_slice(&plaintext);
+    zeroize::Zeroize::zeroize(&mut plaintext);
+    let master = crate::crypto::master::MasterKey::new(key_buf);
+    zeroize::Zeroize::zeroize(&mut key_buf);
+
+    apply_settings(&state, &meta);
+    db.set_failed_attempts(&*integrity_key, 0)?;
+    open_session(&state, master, integrity_key)?;
+
+    log::info!("vault_unlock_with_fido2: unlocked successfully via hardware FIDO2 key");
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]

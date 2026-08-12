@@ -25,7 +25,7 @@ use rusqlite::Connection;
 
 use crate::error::Result;
 
-pub use schema::{VaultMetaRow, RecoveryLocalRow};
+pub use schema::{VaultMetaRow, RecoveryLocalRow, Fido2KeyRow};
 
 pub struct MetaDb {
     pub(crate) conn: Mutex<Connection>,

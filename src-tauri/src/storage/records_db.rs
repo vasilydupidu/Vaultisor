@@ -205,6 +205,20 @@ fn apply_records_migrations(conn: &Connection) -> Result<()> {
             }
         }
     }
+
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS record_password_history (
+            id TEXT PRIMARY KEY,
+            record_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+            field_id TEXT NOT NULL,
+            field_label TEXT NOT NULL,
+            encrypted_value BLOB NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_history_record ON record_password_history(record_id, created_at DESC);
+        "#
+    )?;
     Ok(())
 }
 

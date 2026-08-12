@@ -5,6 +5,7 @@ import { ChevronRight, Hash } from "lucide-react";
 
 interface Props {
   record: RecordModel;
+  healthStatus?: { hasWeak: boolean; hasReused: boolean };
   onPointerDown?: (e: React.PointerEvent) => void;
   /** R-02: открытие с клавиатуры (Enter/Space). */
   onOpen?: () => void;
@@ -38,6 +39,7 @@ function safeHexColor(c: string | null): string | undefined {
  */
 export function RecordCard({
   record,
+  healthStatus,
   onPointerDown,
   onOpen,
   onMoveUp,
@@ -120,7 +122,7 @@ export function RecordCard({
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-sm font-medium text-white truncate">{record.name}</span>
         </div>
-        <div className="flex items-center gap-2 mt-0.5">
+        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
           {record.project ? (
             <span
               className={cn(
@@ -132,6 +134,17 @@ export function RecordCard({
             </span>
           ) : (
             <span className="text-2xs text-white/30">{t('recordCard.noProject')}</span>
+          )}
+
+          {(healthStatus?.hasReused || record.has_reused) && (
+            <span className="text-2xs px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              ⚠️ {t('healthCheck.duplicate')}
+            </span>
+          )}
+          {(healthStatus?.hasWeak || record.has_weak) && !(healthStatus?.hasReused || record.has_reused) && (
+            <span className="text-2xs px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-300 border border-red-500/30">
+              ⚠️ {t('healthCheck.weak')}
+            </span>
           )}
         </div>
       </div>

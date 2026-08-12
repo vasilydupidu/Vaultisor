@@ -369,5 +369,34 @@
 
   "pinKeypad.erase": "Erase",
 
-  "onboarding.unknownError": "unknown error"
+  "onboarding.unknownError": "unknown error",
+
+  "settingsSecurity.fido2Title": "Hardware FIDO2 / WebAuthn Keys",
+  "settingsSecurity.fido2Desc": "Connect one or multiple hardware authenticators (Rutoken MFA, YubiKey, etc.) for independent unlocking",
+  "settingsSecurity.fido2Bind": "Bind FIDO2 Key",
+  "settingsSecurity.fido2AddKey": "Bind another FIDO2 Key",
+  "settingsSecurity.fido2Unbind": "Unbind",
+  "settingsSecurity.fido2UnbindConfirmTitle": "Unbind FIDO2 Key?",
+  "settingsSecurity.fido2UnbindConfirmDesc": "Are you sure you want to unbind key \"{{name}}\"? This authenticator will no longer be able to unlock Vaultisor.",
+  "settingsSecurity.fido2UnbindConfirmAction": "Yes, Unbind",
+  "settingsSecurity.fido2UnbindAll": "Unbind All Keys",
+  "settingsSecurity.fido2Bound": "FIDO2 key bound successfully",
+  "settingsSecurity.fido2NotBound": "FIDO2 key unbound",
+  "settingsSecurity.fido2Prompt": "Insert FIDO2 key into USB port and touch it",
+  "settingsSecurity.fido2KeyNamePrompt": "Enter key name (e.g. Rutoken MFA, YubiKey 5):",
+  "settingsSecurity.fido2NoKeys": "No FIDO2 keys bound",
+  "settingsSecurity.fido2KeysListTitle": "Bound Authenticators ({{count}})",
+  "settingsSecurity.healthCheckTitle": "Vault Health Analyzer",
+  "settingsSecurity.healthCheckDesc": "Highlight reused and weak passwords",
+  "settingsSecurity.passwordHistoryTitle": "Password History",
+  "settingsSecurity.passwordHistoryDesc": "Save up to 10 previous versions of modified passwords",
+
+  "healthCheck.duplicate": "Duplicate password",
+  "healthCheck.weak": "Weak password",
+
+  "recordView.historyTitle": "Password History",
+  "recordView.historyEmpty": "No password history",
+  "recordView.historyRestore": "Restore",
+  "recordView.historyRestoredToast": "Password restored from history",
+  "recordView.historyClear": "Clear History"
 }

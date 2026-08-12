@@ -26,12 +26,32 @@ pub struct VaultMetaRow {
     pub argon2_m_cost: u32,
     pub argon2_t_cost: u32,
     pub argon2_p_cost: u32,
+    pub ui_language: String,
+    pub fido2_enabled: bool,
+    pub fido2_credential_id: Option<Vec<u8>>,
+    pub fido2_public_key: Option<Vec<u8>>,
+    pub enable_health_check: bool,
+    pub enable_password_history: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RecoveryLocalRow {
     pub share_x: u8,
     pub share_y_dpapi: Vec<u8>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Fido2KeyRow {
+    pub id: String,
+    pub name: String,
+    pub credential_id: Vec<u8>,
+    pub public_key: Option<Vec<u8>>,
+    pub fido2_wrapped_key: Vec<u8>,
+    pub created_at: String,
+    /// AAGUID аутентификатора (hex-строка, 32 символа). Определяет модель ключа.
+    pub aaguid: Option<String>,
+    /// Режим привязки: true = ПИН+Touch (resident key), false = Touch-only (non-resident)
+    pub require_pin: bool,
 }
 
 pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
@@ -66,11 +86,17 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
                     pq_encapsulation_key BLOB,
                     pq_ciphertext BLOB,
                     pq_dk_encrypted BLOB,
-                    -- v0.2: Argon2id параметры (хранятся в БД для будущей миграции)
+                    -- v0.2: Argon2id параметры
                     argon2_m_cost INTEGER NOT NULL DEFAULT 524288,
                     argon2_t_cost INTEGER NOT NULL DEFAULT 6,
                     argon2_p_cost INTEGER NOT NULL DEFAULT 2,
-                    ui_language TEXT NOT NULL DEFAULT 'ru'
+                    ui_language TEXT NOT NULL DEFAULT 'ru',
+                    fido2_enabled INTEGER NOT NULL DEFAULT 0,
+                    fido2_credential_id BLOB,
+                    fido2_public_key BLOB,
+                    enable_health_check INTEGER NOT NULL DEFAULT 1,
+                    enable_password_history INTEGER NOT NULL DEFAULT 1,
+                    fido2_wrapped_key BLOB
                 );
 
                 CREATE TABLE IF NOT EXISTS recovery_local (
@@ -78,15 +104,24 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
                     share_x INTEGER NOT NULL,
                     share_y_dpapi BLOB NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS fido2_keys (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    credential_id BLOB NOT NULL,
+                    public_key BLOB,
+                    fido2_wrapped_key BLOB NOT NULL,
+                    created_at TEXT NOT NULL
+                );
                 "#,
             )?;
             Ok(())
         })();
         match res {
             Ok(()) => {
-                conn.execute_batch("PRAGMA user_version = 5")?;
+                conn.execute_batch("PRAGMA user_version = 9")?;
                 conn.execute_batch("COMMIT")?;
-                current = 5;
+                current = 9;
             }
             Err(e) => {
                 let _ = conn.execute_batch("ROLLBACK");
@@ -94,7 +129,7 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
             }
         }
     }
-    // v0.2 миграция для существующих баз (user_version=1 → 2).
+    // v0.2 миграция
     if current >= 1 && current < 2 {
         conn.execute_batch("BEGIN IMMEDIATE")?;
         let res: Result<()> = (|| {
@@ -125,13 +160,10 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
             }
         }
     }
-    // v0.3 миграция для существующих баз (user_version=2 → 3).
+    // v0.3 миграция
     if current >= 2 && current < 3 {
         conn.execute_batch("BEGIN IMMEDIATE")?;
         let res: Result<()> = (|| {
-            // paired_extensions удалена (браузерное расширение вырезано).
-            // Миграция сохранена только ради прогресса user_version, чтобы не
-            // ломать цепочку версий на уже существующих базах.
             conn.execute_batch("SELECT 1;")?;
             Ok(())
         })();
@@ -147,10 +179,7 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
             }
         }
     }
-    // v0.4 миграция: ранее добавляла sync_projects_to_mobile (Selective Sync).
-    // L-01: фича вырезана, колонка удалена (нигде не читалась/писалась и не
-    // входила в HMAC). У уже мигрировавших баз лишняя колонка безвредна —
-    // код на неё не ссылается. Оставляем только прогресс user_version.
+    // v0.4 миграция
     if current >= 3 && current < 4 {
         conn.execute_batch("BEGIN IMMEDIATE")?;
         let res: Result<()> = (|| {
@@ -161,6 +190,7 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
             Ok(()) => {
                 conn.execute_batch("PRAGMA user_version = 4")?;
                 conn.execute_batch("COMMIT")?;
+                current = 4;
             }
             Err(e) => {
                 let _ = conn.execute_batch("ROLLBACK");
@@ -182,6 +212,140 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
         match res {
             Ok(()) => {
                 conn.execute_batch("PRAGMA user_version = 5")?;
+                conn.execute_batch("COMMIT")?;
+                current = 5;
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(e);
+            }
+        }
+    }
+    // v0.6 миграция: fido2 и enable_health_check
+    if current >= 5 && current < 6 {
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let res: Result<()> = (|| {
+            conn.execute_batch(
+                r#"
+                ALTER TABLE vault_meta ADD COLUMN fido2_enabled INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE vault_meta ADD COLUMN fido2_credential_id BLOB;
+                ALTER TABLE vault_meta ADD COLUMN fido2_public_key BLOB;
+                ALTER TABLE vault_meta ADD COLUMN enable_health_check INTEGER NOT NULL DEFAULT 1;
+                "#,
+            )?;
+            Ok(())
+        })();
+        match res {
+            Ok(()) => {
+                conn.execute_batch("PRAGMA user_version = 6")?;
+                conn.execute_batch("COMMIT")?;
+                current = 6;
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(e);
+            }
+        }
+    }
+    // v0.7 миграция: enable_password_history
+    if current >= 6 && current < 7 {
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let res: Result<()> = (|| {
+            conn.execute_batch(
+                r#"
+                ALTER TABLE vault_meta ADD COLUMN enable_password_history INTEGER NOT NULL DEFAULT 1;
+                "#,
+            )?;
+            Ok(())
+        })();
+        match res {
+            Ok(()) => {
+                conn.execute_batch("PRAGMA user_version = 7")?;
+                conn.execute_batch("COMMIT")?;
+                current = 7;
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(e);
+            }
+        }
+    }
+    // v0.8 миграция: fido2_wrapped_key
+    if current >= 7 && current < 8 {
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let res: Result<()> = (|| {
+            conn.execute_batch(
+                r#"
+                ALTER TABLE vault_meta ADD COLUMN fido2_wrapped_key BLOB;
+                "#,
+            )?;
+            Ok(())
+        })();
+        match res {
+            Ok(()) => {
+                current = 8;
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(e);
+            }
+        }
+    }
+    // v0.9 миграция: fido2_keys мульти-ключи
+    if current >= 8 && current < 9 {
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let res: Result<()> = (|| {
+            conn.execute_batch(
+                r#"
+                CREATE TABLE IF NOT EXISTS fido2_keys (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    credential_id BLOB NOT NULL,
+                    public_key BLOB,
+                    fido2_wrapped_key BLOB NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                INSERT OR IGNORE INTO fido2_keys (id, name, credential_id, public_key, fido2_wrapped_key, created_at)
+                SELECT 'legacy-fido2-key-1', 'Рутокен MFA / FIDO2 Ключ', fido2_credential_id, fido2_public_key, fido2_wrapped_key, datetime('now')
+                FROM vault_meta
+                WHERE id = 1 AND fido2_enabled = 1 AND fido2_credential_id IS NOT NULL AND fido2_wrapped_key IS NOT NULL;
+                "#,
+            )?;
+            Ok(())
+        })();
+        match res {
+            Ok(()) => {
+                conn.execute_batch("PRAGMA user_version = 9")?;
+                conn.execute_batch("COMMIT")?;
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(e);
+            }
+        }
+    }
+    // v0.10 миграция: добавить aaguid и require_pin в fido2_keys
+    if current >= 9 && current < 10 {
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let res: Result<()> = (|| {
+            // Добавляем колонки только если их ещё нет
+            let cols: Vec<String> = conn
+                .prepare("PRAGMA table_info(fido2_keys)")?
+                .query_map([], |r| r.get::<_, String>(1))?
+                .filter_map(|r| r.ok())
+                .collect();
+            if !cols.iter().any(|c| c == "aaguid") {
+                conn.execute_batch("ALTER TABLE fido2_keys ADD COLUMN aaguid TEXT")?;
+            }
+            if !cols.iter().any(|c| c == "require_pin") {
+                conn.execute_batch("ALTER TABLE fido2_keys ADD COLUMN require_pin INTEGER NOT NULL DEFAULT 1")?;
+            }
+            Ok(())
+        })();
+        match res {
+            Ok(()) => {
+                conn.execute_batch("PRAGMA user_version = 10")?;
                 conn.execute_batch("COMMIT")?;
             }
             Err(e) => {

@@ -1,4 +1,4 @@
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use uuid::Uuid;
 
 use crate::crypto::master::MasterKey;
@@ -15,14 +15,36 @@ use super::{Record, FieldMeta, FieldType, RecordInput};
 /// `sort_order`, тай-брейк по `updated_at DESC`.
 ///
 /// `category`: None или "all" — все; "work"/"personal" — фильтр.
+fn is_secret_weak(val: &str) -> bool {
+    let s = val.trim();
+    if s.is_empty() {
+        return false;
+    }
+    if s.len() < 8 {
+        return true;
+    }
+    let lower = s.to_lowercase();
+    lower.contains("12345")
+        || lower.contains("qwerty")
+        || lower.contains("password")
+        || lower.contains("admin")
+        || lower == "123456"
+        || lower == "12345678"
+        || lower == "123456789"
+        || lower == "00000000"
+}
+
+/// Перечислить записи (без полей) с поиском, фильтром категории и пагинацией.
 pub fn list_records(
     db: &RecordsDb,
+    master: Option<&MasterKey>,
+    enable_health: bool,
     query: Option<&str>,
     category: Option<&str>,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<Record>> {
-    db.with_conn(|c| {
+    let mut records = db.with_conn(|c| {
         let q = query.unwrap_or("").trim();
         let mut where_clauses: Vec<&str> = Vec::new();
         let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
@@ -62,7 +84,71 @@ pub fn list_records(
         let rows: rusqlite::Result<Vec<_>> =
             stmt.query_map(refs.as_slice(), map_record)?.collect();
         Ok(rows?)
-    })
+    })?;
+
+    if enable_health {
+        if let Some(m) = master {
+            let secret_fields: Vec<(String, String, String, Vec<u8>)> = db.with_conn(|c| {
+                let mut stmt = c.prepare(
+                    "SELECT record_id, id, field_type, value_blob FROM fields \
+                     WHERE is_secret = 1 OR field_type = 'secret'",
+                )?;
+                let rows = stmt.query_map([], |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, Vec<u8>>(3)?,
+                    ))
+                })?;
+                let mut res = Vec::new();
+                for row in rows {
+                    if let Ok(r) = row {
+                        res.push(r);
+                    }
+                }
+                Ok(res)
+            })?;
+
+            use std::collections::HashMap;
+            let mut weak_records = std::collections::HashSet::new();
+            let mut val_counts: HashMap<String, usize> = HashMap::new();
+            let mut rec_secrets: Vec<(String, String)> = Vec::new();
+
+            for (rid, fid, ft_s, blob) in secret_fields {
+                let ft = FieldType::parse(&ft_s).unwrap_or(FieldType::Secret);
+                let aad = field_aad(&rid, &fid, ft);
+                if let Ok(val_str) = field_decrypt(m, &blob, &aad) {
+                    let s = val_str.to_string();
+                    if is_secret_weak(&s) {
+                        weak_records.insert(rid.clone());
+                    }
+                    *val_counts.entry(s.clone()).or_insert(0) += 1;
+                    rec_secrets.push((rid, s));
+                }
+            }
+
+            let reused_vals: std::collections::HashSet<String> = val_counts
+                .into_iter()
+                .filter(|(_, count)| *count > 1)
+                .map(|(val, _)| val)
+                .collect();
+
+            let mut reused_records = std::collections::HashSet::new();
+            for (rid, val) in rec_secrets {
+                if reused_vals.contains(&val) {
+                    reused_records.insert(rid);
+                }
+            }
+
+            for rec in &mut records {
+                rec.has_weak = weak_records.contains(&rec.id);
+                rec.has_reused = reused_records.contains(&rec.id);
+            }
+        }
+    }
+
+    Ok(records)
 }
 
 /// R-03: сохранить пользовательский порядок записей. Присваивает `sort_order`
@@ -91,6 +177,8 @@ fn map_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<Record> {
         created_at: row.get(5)?,
         updated_at: row.get(6)?,
         category: row.get(7)?,
+        has_weak: false,
+        has_reused: false,
         fields: vec![],
     })
 }
@@ -333,6 +421,47 @@ pub fn update_record(
                     ],
                 )?;
             } else if let Some(blob) = blob_bytes {
+                // Если поле секретное — сохраняем старое значение в историю перед записью
+                if f.is_secret || f.field_type == FieldType::Secret {
+                    if let Ok(Some((old_ft_str, old_blob))) = tx
+                        .query_row(
+                            "SELECT field_type, value_blob FROM fields WHERE id = ?1 AND record_id = ?2",
+                            params![field_id, record_id],
+                            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?)),
+                        )
+                        .optional()
+                    {
+                        if let Ok(old_ft) = FieldType::parse(&old_ft_str) {
+                            let old_aad = field_aad(record_id, &field_id, old_ft);
+                            if let Ok(old_val_str) = field_decrypt(master, &old_blob, &old_aad) {
+                                if let Some(new_val) = &f.value {
+                                    if old_val_str.as_str() != new_val && !old_val_str.is_empty() {
+                                        let hist_id = Uuid::new_v4().to_string();
+                                        let hist_aad = super::history_aad(record_id, &hist_id);
+                                        if let Ok(enc_hist) = field_encrypt(master, old_val_str.as_bytes(), &hist_aad) {
+                                            let _ = tx.execute(
+                                                "INSERT INTO record_password_history \
+                                                 (id, record_id, field_id, field_label, encrypted_value, created_at) \
+                                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                                                params![hist_id, record_id, field_id, f.label, enc_hist, now],
+                                            );
+                                            // Храним не более 10 записей на запись
+                                            let _ = tx.execute(
+                                                "DELETE FROM record_password_history \
+                                                 WHERE record_id = ?1 AND id NOT IN ( \
+                                                    SELECT id FROM record_password_history \
+                                                    WHERE record_id = ?1 ORDER BY created_at DESC LIMIT 10 \
+                                                 )",
+                                                params![record_id],
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 tx.execute(
                     "UPDATE fields SET field_type = ?2, label = ?3, value_blob = ?4, \
                                        is_secret = ?5, sort_order = ?6, updated_at = ?7 \
@@ -365,6 +494,58 @@ pub fn update_record(
         }
 
         tx.commit()?;
+        Ok(())
+    })
+}
+
+/// Получить историю изменения паролей для записи.
+pub fn get_password_history(
+    db: &RecordsDb,
+    master: &MasterKey,
+    record_id: &str,
+) -> Result<Vec<super::PasswordHistoryEntry>> {
+    use super::{history_aad, PasswordHistoryEntry};
+    db.with_conn(|c| {
+        let mut stmt = c.prepare(
+            "SELECT id, field_id, field_label, encrypted_value, created_at \
+             FROM record_password_history \
+             WHERE record_id = ?1 ORDER BY created_at DESC LIMIT 10",
+        )?;
+        let rows = stmt.query_map(params![record_id], |row| {
+            let id: String = row.get(0)?;
+            let field_id: String = row.get(1)?;
+            let field_label: String = row.get(2)?;
+            let enc_val: Vec<u8> = row.get(3)?;
+            let created_at: String = row.get(4)?;
+            Ok((id, field_id, field_label, enc_val, created_at))
+        })?;
+
+        let mut res = Vec::new();
+        for r in rows {
+            let (id, field_id, field_label, enc_val, created_at) = r?;
+            let aad = history_aad(record_id, &id);
+            if let Ok(val) = field_decrypt(master, &enc_val, &aad) {
+                res.push(PasswordHistoryEntry {
+                    id,
+                    record_id: record_id.to_string(),
+                    field_id,
+                    field_label,
+                    value: (*val).clone(),
+                    created_at,
+                });
+            }
+        }
+        Ok(res)
+    })
+}
+
+/// Очистить историю паролей для записи.
+pub fn clear_password_history(db: &RecordsDb, record_id: &str) -> Result<()> {
+    db.with_conn(|c| {
+        c.execute(
+            "DELETE FROM record_password_history WHERE record_id = ?1",
+            params![record_id],
+        )?;
         Ok(())
     })
 }
@@ -594,13 +775,13 @@ mod tests {
         }
         // Ставим детерминированный порядок a,b,c (sort_order 0,1,2).
         reorder_records(&db, &ids).unwrap();
-        let page1: Vec<String> = list_records(&db, None, None, 2, 0)
+        let page1: Vec<String> = list_records(&db, Some(&master), true, None, None, 2, 0)
             .unwrap()
             .into_iter()
             .map(|r| r.id)
             .collect();
         assert_eq!(page1, vec![ids[0].clone(), ids[1].clone()], "страница 1 (limit=2)");
-        let page2: Vec<String> = list_records(&db, None, None, 2, 2)
+        let page2: Vec<String> = list_records(&db, Some(&master), true, None, None, 2, 2)
             .unwrap()
             .into_iter()
             .map(|r| r.id)
@@ -608,13 +789,13 @@ mod tests {
         assert_eq!(page2, vec![ids[2].clone()], "страница 2 (offset=2)");
 
         // Фильтр категории в SQL: все записи personal → work пусто.
-        assert_eq!(list_records(&db, None, Some("work"), 10, 0).unwrap().len(), 0);
+        assert_eq!(list_records(&db, Some(&master), true, None, Some("work"), 10, 0).unwrap().len(), 0);
         assert_eq!(
-            list_records(&db, None, Some("personal"), 10, 0).unwrap().len(),
+            list_records(&db, Some(&master), true, None, Some("personal"), 10, 0).unwrap().len(),
             3
         );
         // Поиск + пагинация вместе.
-        let found = list_records(&db, Some("b"), None, 10, 0).unwrap();
+        let found = list_records(&db, Some(&master), true, Some("b"), None, 10, 0).unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].id, ids[1]);
     }

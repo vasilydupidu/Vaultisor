@@ -58,8 +58,9 @@ pub struct ListInput {
 pub fn record_list(input: ListInput, state: State<'_, AppState>) -> Result<Vec<Record>> {
     let limit = input.limit.unwrap_or(100).clamp(1, 500);
     let offset = input.offset.unwrap_or(0).max(0);
-    with_unlocked_db(&state, &input.db_type, |_mk, db| {
-        list_records(db, input.query.as_deref(), input.category.as_deref(), limit, offset)
+    let enable_health = state.open_meta().and_then(|m| m.get_enable_health_check()).unwrap_or(true);
+    with_unlocked_db(&state, &input.db_type, |mk, db| {
+        list_records(db, Some(mk), enable_health, input.query.as_deref(), input.category.as_deref(), limit, offset)
     })
 }
 
@@ -187,6 +188,32 @@ pub async fn records_batch_delete(
             }
         }
         Ok(deleted_count)
+    })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HistoryInput {
+    pub record_id: String,
+    pub db_type: String,
+}
+
+#[tauri::command]
+pub fn record_get_password_history(
+    input: HistoryInput,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::storage::records::PasswordHistoryEntry>> {
+    with_unlocked_db(&state, &input.db_type, |mk, db| {
+        crate::storage::records::get_password_history(db, mk, &input.record_id)
+    })
+}
+
+#[tauri::command]
+pub fn record_clear_password_history(
+    input: HistoryInput,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    with_unlocked_db(&state, &input.db_type, |_mk, db| {
+        crate::storage::records::clear_password_history(db, &input.record_id)
     })
 }
 

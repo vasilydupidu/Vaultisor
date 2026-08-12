@@ -170,3 +170,190 @@ pub async fn set_ui_language(lang: String, state: State<'_, AppState>) -> Result
         _ => Err(VaultError::Locked),
     }
 }
+
+#[tauri::command]
+pub async fn get_enable_health_check(state: State<'_, AppState>) -> Result<bool> {
+    let db = state.open_meta()?;
+    db.get_enable_health_check()
+}
+
+#[tauri::command]
+pub async fn set_enable_health_check(enabled: bool, state: State<'_, AppState>) -> Result<()> {
+    let session = state.session.lock();
+    match &*session {
+        SessionState::Unlocked { .. } => {
+            let db = state.open_meta()?;
+            db.set_enable_health_check(enabled)
+        }
+        _ => Err(VaultError::Locked),
+    }
+}
+
+#[tauri::command]
+pub async fn get_enable_password_history(state: State<'_, AppState>) -> Result<bool> {
+    let db = state.open_meta()?;
+    db.get_enable_password_history()
+}
+
+#[tauri::command]
+pub async fn set_enable_password_history(enabled: bool, state: State<'_, AppState>) -> Result<()> {
+    let session = state.session.lock();
+    match &*session {
+        SessionState::Unlocked { .. } => {
+            let db = state.open_meta()?;
+            db.set_enable_password_history(enabled)
+        }
+        _ => Err(VaultError::Locked),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Fido2KeyItem {
+    pub id: String,
+    pub name: String,
+    pub created_at: String,
+    pub credential_id_preview: String,
+    /// Название модели ключа, определённое по AAGUID ("Рутокен MFA", "YubiKey 5 NFC" и т.д.)
+    pub model_name: String,
+    /// Режим привязки: true = ПИН+Touch, false = Touch-only
+    pub require_pin: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Fido2StatusDto {
+    pub enabled: bool,
+    pub available: bool,
+    pub keys: Vec<Fido2KeyItem>,
+}
+
+#[tauri::command]
+pub async fn get_fido2_status(state: State<'_, AppState>) -> Result<Fido2StatusDto> {
+    let db = state.open_meta()?;
+    let keys_rows = db.get_fido2_keys().unwrap_or_default();
+    let (enabled_meta, _, _) = db.get_fido2_status().unwrap_or((false, None, None));
+    let available = crate::auth::fido2::is_fido2_supported();
+
+    let keys = keys_rows
+        .into_iter()
+        .map(|k| {
+            let hex_id = hex::encode(&k.credential_id);
+            let preview = if !hex_id.is_empty() {
+                if hex_id.len() > 12 {
+                    format!("{}...{}", &hex_id[..6], &hex_id[hex_id.len() - 6..])
+                } else {
+                    hex_id
+                }
+            } else {
+                format!("id-{}", &k.id[..6.min(k.id.len())])
+            };
+            // Определяем модель ключа по AAGUID
+            let model_name = if let Some(ref aaguid_hex) = k.aaguid {
+                if aaguid_hex.len() == 32 {
+                    let mut buf = [0u8; 16];
+                    if hex::decode_to_slice(aaguid_hex, &mut buf).is_ok() {
+                        crate::auth::fido2::aaguid_model_name(&buf).to_string()
+                    } else {
+                        "FIDO2 Security Key".to_string()
+                    }
+                } else {
+                    "FIDO2 Security Key".to_string()
+                }
+            } else {
+                "FIDO2 Security Key".to_string()
+            };
+            Fido2KeyItem {
+                id: k.id,
+                name: k.name,
+                created_at: k.created_at,
+                credential_id_preview: preview,
+                model_name,
+                require_pin: k.require_pin,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let enabled = enabled_meta || !keys.is_empty();
+    Ok(Fido2StatusDto { enabled, available, keys })
+}
+
+#[tauri::command]
+pub async fn register_fido2_key(name: Option<String>, require_pin: Option<bool>, state: State<'_, AppState>) -> Result<Fido2KeyItem> {
+    let (master_key, _integrity_key) = {
+        let session = state.session.lock();
+        match &*session {
+            SessionState::Unlocked { master_key, integrity_key, .. } => (master_key.clone(), integrity_key.clone()),
+            _ => return Err(VaultError::Locked),
+        }
+    };
+
+    let pin_mode = require_pin.unwrap_or(true);
+    let key_name = name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "FIDO2 Ключ".to_string());
+    let name_for_prompt = key_name.clone();
+
+    let reg = tokio::task::spawn_blocking(move || {
+        crate::auth::fido2::register_fido2_key_prompt(&name_for_prompt, pin_mode)
+    })
+    .await
+    .map_err(|e| VaultError::BadInput(format!("ошибка вызова FIDO2: {e}")))?;
+
+    let reg = reg?;
+
+    // Encrypt master_key for FIDO2 hardware unlock path
+    let fido2_kek = crate::crypto::kdf::hkdf_derive(&reg.credential_id, b"vaultisor:fido2-salt:v1", b"vaultisor:fido2-kek:v1", 32)?;
+    let mut kek_arr = [0u8; 32];
+    kek_arr.copy_from_slice(&fido2_kek);
+
+    let fido2_blob = master_key.with_decrypted(|dec| {
+        crate::crypto::aead::encrypt(&kek_arr, dec, b"vaultisor:fido2-wrap:v1")
+    })?;
+    let fido2_wrapped_bytes = fido2_blob.to_bytes();
+
+    let aaguid_hex = hex::encode(&reg.aaguid);
+    let model_name = crate::auth::fido2::aaguid_model_name(&reg.aaguid).to_string();
+
+    // Если пользователь не задал имя — используем модель ключа как имя
+    let final_name = if key_name == "FIDO2 Ключ" {
+        model_name.clone()
+    } else {
+        key_name
+    };
+
+    let db = state.open_meta()?;
+    let added = db.add_fido2_key(&final_name, &reg.credential_id, &reg.public_key, &fido2_wrapped_bytes, Some(&aaguid_hex), pin_mode)?;
+
+    let hex_id = hex::encode(&added.credential_id);
+    let preview = if !hex_id.is_empty() {
+        if hex_id.len() > 12 {
+            format!("{}...{}", &hex_id[..6], &hex_id[hex_id.len() - 6..])
+        } else {
+            hex_id
+        }
+    } else {
+        format!("id-{}", &added.id[..6.min(added.id.len())])
+    };
+
+    Ok(Fido2KeyItem {
+        id: added.id,
+        name: added.name,
+        created_at: added.created_at,
+        credential_id_preview: preview,
+        model_name,
+        require_pin: pin_mode,
+    })
+}
+
+#[tauri::command]
+pub async fn unbind_fido2_key(id: Option<String>, state: State<'_, AppState>) -> Result<()> {
+    let session = state.session.lock();
+    match &*session {
+        SessionState::Unlocked { .. } => {
+            let db = state.open_meta()?;
+            if let Some(key_id) = id {
+                db.delete_fido2_key(&key_id)
+            } else {
+                db.delete_all_fido2_keys()
+            }
+        }
+        _ => Err(VaultError::Locked),
+    }
+}

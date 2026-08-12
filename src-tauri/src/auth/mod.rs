@@ -3,5 +3,6 @@
 // и AppState (state.rs).
 
 pub mod pin;
+pub mod fido2;
 
 pub use pin::{validate_pin_format, PIN_MAX_LEN, PIN_MIN_LEN};

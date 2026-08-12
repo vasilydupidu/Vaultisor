@@ -1,6 +1,6 @@
 [package]
 name = "vaultisor"
-version = "2.5.1"
+version = "2.7.0"
 description = "Vaultisor — local secure vault for technical secrets"
 authors = ["Vaultisor"]
 edition = "2021"

@@ -369,5 +369,34 @@
 
   "pinKeypad.erase": "Стереть",
   
-  "onboarding.unknownError": "неизвестная ошибка"
+  "onboarding.unknownError": "неизвестная ошибка",
+
+  "settingsSecurity.fido2Title": "Физические FIDO2 / WebAuthn ключи",
+  "settingsSecurity.fido2Desc": "Подключите один или несколько аппаратных токенов (Рутокен MFA, YubiKey и др.) для независимой разблокировки",
+  "settingsSecurity.fido2Bind": "Привязать FIDO2-ключ",
+  "settingsSecurity.fido2AddKey": "Привязать еще один FIDO2-ключ",
+  "settingsSecurity.fido2Unbind": "Отвязать",
+  "settingsSecurity.fido2UnbindConfirmTitle": "Отвязать FIDO2-ключ?",
+  "settingsSecurity.fido2UnbindConfirmDesc": "Вы действительно хотите отвязать ключ «{{name}}»? Данный токен больше не сможет разблокировать Vaultisor.",
+  "settingsSecurity.fido2UnbindConfirmAction": "Да, отвязать",
+  "settingsSecurity.fido2UnbindAll": "Отвязать все ключи",
+  "settingsSecurity.fido2Bound": "FIDO2-ключ успешно привязан",
+  "settingsSecurity.fido2NotBound": "FIDO2-ключ отвязан",
+  "settingsSecurity.fido2Prompt": "Вставьте FIDO2-ключ в USB-порт и коснитесь его",
+  "settingsSecurity.fido2KeyNamePrompt": "Введите название ключа (напр., Рутокен MFA, YubiKey 5):",
+  "settingsSecurity.fido2NoKeys": "Ни один FIDO2-ключ не привязан",
+  "settingsSecurity.fido2KeysListTitle": "Привязанные токены ({{count}})",
+  "settingsSecurity.healthCheckTitle": "Анализатор безопасности базы",
+  "settingsSecurity.healthCheckDesc": "Подсвечивать повторно используемые и слабые пароли",
+  "settingsSecurity.passwordHistoryTitle": "История изменений паролей",
+  "settingsSecurity.passwordHistoryDesc": "Сохранять до 10 предыдущих версий изменённых паролей",
+
+  "healthCheck.duplicate": "Повтор пароля",
+  "healthCheck.weak": "Слабый пароль",
+
+  "recordView.historyTitle": "История паролей",
+  "recordView.historyEmpty": "История изменений пуста",
+  "recordView.historyRestore": "Восстановить",
+  "recordView.historyRestoredToast": "Пароль успешно восстановлен из истории",
+  "recordView.historyClear": "Очистить историю"
 }

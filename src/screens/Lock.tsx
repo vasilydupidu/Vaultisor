@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Fingerprint, Lock as LockIcon, RefreshCcw } from "lucide-react";
+import { Fingerprint, Key, Lock as LockIcon, RefreshCcw } from "lucide-react";
 import {
   apiVaultLockInfo,
   apiVaultUnlock,
   apiVaultUnlockWithHello,
+  apiVaultUnlockWithFido2,
   apiSystemCheck,
 } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
@@ -26,12 +27,14 @@ interface Props {
 
 export function LockScreen({ onUnlocked, onReset }: Props) {
   const [pin, setPin] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busyTarget, setBusyTarget] = useState<"pin" | "hello" | "fido2" | null>(null);
+  const busy = busyTarget !== null;
   const [shake, setShake] = useState(false);
   const [recoverOpen, setRecoverOpen] = useState(false);
   const [recoverReason, setRecoverReason] =
     useState<"forgot-pin" | "device-mismatch">("forgot-pin");
   const [helloAvailable, setHelloAvailable] = useState(false);
+  const [fido2Available, setFido2Available] = useState(false);
   const [tpmAvailable, setTpmAvailable] = useState(true);
   const [appVersion, setAppVersion] = useState("");
   // L-05: ввод буквенно-цифрового PIN (для хранилищ, созданных с усиленным PIN).
@@ -51,10 +54,14 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
   useEffect(() => {
     setPin("");
     apiVaultLockInfo()
-      .then((info) =>
-        setHelloAvailable(info.use_windows_hello && info.hello_blob_present),
-      )
-      .catch(() => setHelloAvailable(false));
+      .then((info) => {
+        setHelloAvailable(info.use_windows_hello && info.hello_blob_present);
+        setFido2Available(info.fido2_enabled);
+      })
+      .catch(() => {
+        setHelloAvailable(false);
+        setFido2Available(false);
+      });
 
     apiSystemCheck()
       .then((sys) => setTpmAvailable(sys.tpm_available))
@@ -72,28 +79,20 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
    *  - если PIN пустой и доступен Hello → vault_unlock_with_hello.
    */
   const handleError = (e: unknown) => {
-    const msg = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
-    if (msg.startsWith("DEVICE_MISMATCH")) {
-      // Перенос на другое устройство → автоматически открываем Recovery.
+    const raw = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
+    if (raw.includes("DEVICE_MISMATCH")) {
       setRecoverReason("device-mismatch");
       setRecoverOpen(true);
-      setPin("");
-      return;
-    }
-    if (msg.startsWith("TOO_MANY_ATTEMPTS")) {
-      // Лимит исчерпан → автоматически открываем Recovery с понятным
-      // контекстом (рестарт не поможет — счётчик в БД, защищён MAC).
-      setRecoverReason("device-mismatch");
-      setRecoverOpen(true);
-      toast.error(
-        t('lock.limitExhausted'),
-      );
       return;
     }
     setShake(true);
     setTimeout(() => setShake(false), 380);
     setPin("");
-    toast.error(sanitizeError(e, t('lock.unlockFailed')));
+    const sanitized = sanitizeError(e, t('lock.unlockFailed'));
+    if (sanitized.includes("отменена пользователем") || raw.includes("отменена пользователем") || raw.includes("Canceled by user")) {
+      return;
+    }
+    toast.error(sanitized);
   };
 
   const submit = async () => {
@@ -108,7 +107,8 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
       );
       return;
     }
-    setBusy(true);
+    const target = pin.length > 0 ? "pin" : "hello";
+    setBusyTarget(target);
     try {
       if (pin.length > 0) {
         await apiVaultUnlock(pin);
@@ -122,12 +122,37 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
     } catch (e) {
       handleError(e);
     } finally {
-      setBusy(false);
+      setBusyTarget(null);
+    }
+  };
+
+  const handleFido2Unlock = async () => {
+    if (busy) return;
+    setBusyTarget("fido2");
+    try {
+      await apiVaultUnlockWithFido2();
+      onUnlocked();
+    } catch (e) {
+      handleError(e);
+    } finally {
+      setBusyTarget(null);
     }
   };
 
   return (
     <div className="relative h-full flex flex-col items-center px-5 pt-8 pb-5">
+      {tpmAvailable && (
+        <button
+          onClick={() => {
+            setAlnum((v) => !v);
+            setPin("");
+          }}
+          className="absolute top-[12px] right-[54px] z-50 px-2 py-[2px] border border-white/15 rounded bg-white/6 hover:bg-white/12 text-white/55 hover:text-white/85 text-[11px] font-semibold tracking-wider transition-all leading-[1.6] cursor-pointer"
+          title={alnum ? "Цифровой PIN (123)" : "Буквенно-цифровой PIN (ABC)"}
+        >
+          {alnum ? "ABC" : "123"}
+        </button>
+      )}
       <LanguageToggle />
       <BackgroundPattern opacity={0.7} />
 
@@ -192,16 +217,60 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
       </div>
 
       <div className="w-full pt-3 space-y-1.5 shrink-0">
-        <Button
-          onClick={submit}
-          disabled={busy}
-          fullWidth
-          size="md"
-          loading={busy}
-          leftIcon={pin.length === 0 && helloAvailable ? <Fingerprint className="h-4 w-4" /> : undefined}
-        >
-          {pin.length === 0 && helloAvailable ? t('lock.unlockHello') : t('lock.unlock')}
-        </Button>
+        {pin.length === 0 && helloAvailable && fido2Available ? (
+          <div className="flex items-center gap-2 w-full">
+            <Button
+              onClick={submit}
+              disabled={busy}
+              fullWidth
+              size="md"
+              loading={busyTarget === "hello"}
+              leftIcon={<Fingerprint className="h-4 w-4 text-emerald-400" />}
+              className="flex-1"
+            >
+              Hello
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleFido2Unlock}
+              disabled={busy}
+              fullWidth
+              size="md"
+              loading={busyTarget === "fido2"}
+              leftIcon={<Key className="h-4 w-4 text-brand-400" />}
+              className="flex-1 border-brand-500/30 hover:bg-brand-500/10 text-brand-300"
+            >
+              FIDO2
+            </Button>
+          </div>
+        ) : (
+          <>
+            <Button
+              onClick={submit}
+              disabled={busy}
+              fullWidth
+              size="md"
+              loading={pin.length > 0 ? busyTarget === "pin" : busyTarget === "hello"}
+              leftIcon={pin.length === 0 && helloAvailable ? <Fingerprint className="h-4 w-4 text-emerald-400" /> : undefined}
+            >
+              {pin.length === 0 && helloAvailable ? t('lock.unlockHello') : t('lock.unlock')}
+            </Button>
+            {fido2Available && (
+              <Button
+                variant="secondary"
+                onClick={handleFido2Unlock}
+                disabled={busy}
+                fullWidth
+                size="md"
+                loading={busyTarget === "fido2"}
+                leftIcon={<Key className="h-4 w-4 text-brand-400" />}
+                className="border-brand-500/30 hover:bg-brand-500/10 text-brand-300"
+              >
+                FIDO2
+              </Button>
+            )}
+          </>
+        )}
         <Button
           variant="ghost"
           fullWidth
@@ -214,19 +283,6 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
         >
           {tpmAvailable ? t('lock.forgotPin') : t('lock.forgotPass')}
         </Button>
-        {tpmAvailable && (
-          <Button
-            variant="ghost"
-            fullWidth
-            size="sm"
-            onClick={() => {
-              setAlnum((v) => !v);
-              setPin("");
-            }}
-          >
-            {alnum ? t('lock.digitalPin') : t('lock.alnumPin')}
-          </Button>
-        )}
       </div>
 
       <Sheet

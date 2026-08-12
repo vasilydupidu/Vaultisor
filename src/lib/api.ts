@@ -40,6 +40,8 @@ export interface RecordModel {
   category: "personal" | "work";
   created_at: string;
   updated_at: string;
+  has_weak?: boolean;
+  has_reused?: boolean;
   fields: FieldMeta[];
 }
 
@@ -106,6 +108,8 @@ export const apiVaultUnlock = (pin: string) =>
   invoke<void>("vault_unlock", { input: { pin } });
 export const apiVaultUnlockWithHello = () =>
   invoke<void>("vault_unlock_with_hello");
+export const apiVaultUnlockWithFido2 = () =>
+  invoke<void>("vault_unlock_with_fido2");
 export const apiVaultLock = () => invoke<void>("vault_lock");
 export const apiVaultChangePin = (oldPin: string, newPin: string) =>
   invoke<void>("vault_change_pin", { input: { old_pin: oldPin, new_pin: newPin } });
@@ -113,6 +117,7 @@ export const apiVaultChangePin = (oldPin: string, newPin: string) =>
 export interface LockInfo {
   use_windows_hello: boolean;
   hello_blob_present: boolean;
+  fido2_enabled: boolean;
 }
 export const apiVaultLockInfo = () => invoke<LockInfo>("vault_lock_info");
 
@@ -244,3 +249,55 @@ export const apiImportChromiumCsv = (filePath: string) =>
   });
 export const apiSecureDeleteFile = (filePath: string) =>
   invoke<void>("secure_delete_file", { filePath });
+
+// === История изменений паролей ===
+export interface PasswordHistoryEntry {
+  id: string;
+  record_id: string;
+  field_id: string;
+  field_label: string;
+  value: string;
+  created_at: string;
+}
+
+export const apiGetPasswordHistory = (dbType: "records" | "web", recordId: string) =>
+  invoke<PasswordHistoryEntry[]>("record_get_password_history", {
+    input: { record_id: recordId, db_type: dbType },
+  });
+
+export const apiClearPasswordHistory = (dbType: "records" | "web", recordId: string) =>
+  invoke<void>("record_clear_password_history", {
+    input: { record_id: recordId, db_type: dbType },
+  });
+
+// === Анализатор безопасности баз (Vault Health Check) ===
+export const apiGetEnableHealthCheck = () => invoke<boolean>("get_enable_health_check");
+export const apiSetEnableHealthCheck = (enabled: boolean) =>
+  invoke<void>("set_enable_health_check", { enabled });
+
+export const apiGetEnablePasswordHistory = () => invoke<boolean>("get_enable_password_history");
+export const apiSetEnablePasswordHistory = (enabled: boolean) =>
+  invoke<void>("set_enable_password_history", { enabled });
+
+// === Аппаратный FIDO2-ключ ===
+export interface Fido2KeyItem {
+  id: string;
+  name: string;
+  created_at: string;
+  credential_id_preview: string;
+  /** Название модели ключа (Рутокен MFA, YubiKey 5 NFC, FIDO2 Security Key) */
+  model_name: string;
+  /** true = ПИН+Touch, false = Touch-only */
+  require_pin: boolean;
+}
+
+export interface Fido2Status {
+  enabled: boolean;
+  available: boolean;
+  keys: Fido2KeyItem[];
+}
+
+export const apiGetFido2Status = () => invoke<Fido2Status>("get_fido2_status");
+export const apiRegisterFido2Key = (name?: string, requirePin?: boolean) =>
+  invoke<Fido2KeyItem>("register_fido2_key", { name, require_pin: requirePin ?? true });
+export const apiUnbindFido2Key = (id?: string) => invoke<void>("unbind_fido2_key", { id });

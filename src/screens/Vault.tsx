@@ -7,9 +7,11 @@ import {
   apiRecordGet,
   apiRecordUpdate,
   apiRecordsBatchDelete,
+  apiGetEnableHealthCheck,
   type SettingsDto,
   type RecordInput,
 } from "@/lib/api";
+import { computeVaultHealth } from "@/lib/healthCheck";
 import { sanitizeError } from "@/lib/sanitizeError";
 import { cn } from "@/lib/cn";
 import { IconButton } from "@/components/ui/IconButton";
@@ -64,9 +66,14 @@ export function VaultScreen({ onLock }: Props) {
   useAutoBackup();
   useIdleAutolock(settings?.autolock_seconds, onLock);
 
+  const [enableHealthCheck, setEnableHealthCheck] = useState(true);
+
   useEffect(() => {
     apiSettingsGet().then(setSettings).catch(() => {});
+    apiGetEnableHealthCheck().then(setEnableHealthCheck).catch(() => {});
   }, []);
+
+  const computedHealth = computeVaultHealth(records);
 
   // Reorder возможен только в неотфильтрованном виде (иначе sort_order по
   // подмножеству сломал бы глобальный порядок).
@@ -327,6 +334,7 @@ export function VaultScreen({ onLock }: Props) {
               <RecordCard
                 key={r.id}
                 record={r}
+                healthStatus={enableHealthCheck ? computedHealth.get(r.id) : undefined}
                 selectable={selectionMode}
                 selected={selectedIds.has(r.id)}
                 onSelectToggle={() => toggleSelect(r.id)}
@@ -417,8 +425,23 @@ export function VaultScreen({ onLock }: Props) {
         )}
       </Sheet>
 
-      <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} position="full">
-        <Settings onClose={() => setSettingsOpen(false)} onSettingsChanged={(s) => setSettings(s)} />
+      <Sheet
+        open={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+          apiGetEnableHealthCheck().then(setEnableHealthCheck).catch(() => {});
+          refresh();
+        }}
+        position="full"
+      >
+        <Settings
+          onClose={() => {
+            setSettingsOpen(false);
+            apiGetEnableHealthCheck().then(setEnableHealthCheck).catch(() => {});
+            refresh();
+          }}
+          onSettingsChanged={(s) => setSettings(s)}
+        />
       </Sheet>
     </div>
   );

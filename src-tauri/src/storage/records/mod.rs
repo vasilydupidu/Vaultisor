@@ -61,6 +61,10 @@ pub struct Record {
     pub category: String,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub has_weak: bool,
+    #[serde(default)]
+    pub has_reused: bool,
     /// Поля включаются только при `record_get`, не при `record_list`.
     #[serde(default)]
     pub fields: Vec<FieldMeta>,
@@ -107,4 +111,20 @@ pub struct FieldInput {
 /// AAD для шифрования значения поля.
 pub(crate) fn field_aad(record_id: &str, field_id: &str, ft: FieldType) -> Vec<u8> {
     format!("vaultisor:field:{record_id}:{field_id}:{}", ft.as_str()).into_bytes()
+}
+
+/// AAD для шифрования истории паролей.
+pub(crate) fn history_aad(record_id: &str, history_id: &str) -> Vec<u8> {
+    format!("vaultisor:history:{record_id}:{history_id}").into_bytes()
+}
+
+/// Элемент истории изменения паролей.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasswordHistoryEntry {
+    pub id: String,
+    pub record_id: String,
+    pub field_id: String,
+    pub field_label: String,
+    pub value: String,
+    pub created_at: String,
 }

@@ -6,7 +6,7 @@ use crate::storage::integrity::{
 };
 
 use super::MetaDb;
-use super::schema::VaultMetaRow;
+use super::schema::{VaultMetaRow, Fido2KeyRow};
 
 impl MetaDb {
     pub fn vault_initialized(&self) -> Result<bool> {
@@ -76,7 +76,9 @@ impl MetaDb {
                               crypto_version,
                               device_secret_tpm_name, device_secret_tpm_blob,
                               pq_encapsulation_key, pq_ciphertext, pq_dk_encrypted,
-                              argon2_m_cost, argon2_t_cost, argon2_p_cost
+                              argon2_m_cost, argon2_t_cost, argon2_p_cost,
+                              ui_language, fido2_enabled, fido2_credential_id,
+                              fido2_public_key, enable_health_check, enable_password_history
                        FROM vault_meta WHERE id = 1"#,
                     [],
                     |row| {
@@ -103,6 +105,12 @@ impl MetaDb {
                             argon2_m_cost: row.get::<_, i64>(19)? as u32,
                             argon2_t_cost: row.get::<_, i64>(20)? as u32,
                             argon2_p_cost: row.get::<_, i64>(21)? as u32,
+                            ui_language: row.get::<_, Option<String>>(22)?.unwrap_or_else(|| "ru".to_string()),
+                            fido2_enabled: row.get::<_, Option<i64>>(23)?.unwrap_or(0) != 0,
+                            fido2_credential_id: row.get(24)?,
+                            fido2_public_key: row.get(25)?,
+                            enable_health_check: row.get::<_, Option<i64>>(26)?.unwrap_or(1) != 0,
+                            enable_password_history: row.get::<_, Option<i64>>(27)?.unwrap_or(1) != 0,
                         })
                     },
                 )
@@ -499,6 +507,210 @@ impl MetaDb {
             )?;
             Ok(())
         })
+    }
+
+    pub fn get_enable_health_check(&self) -> Result<bool> {
+        self.with_conn(|c| {
+            let enabled: i64 = c
+                .query_row(
+                    "SELECT enable_health_check FROM vault_meta WHERE id = 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(1);
+            Ok(enabled != 0)
+        })
+    }
+
+    pub fn set_enable_health_check(&self, enabled: bool) -> Result<()> {
+        self.with_conn(|c| {
+            c.execute(
+                "UPDATE vault_meta SET enable_health_check = ?1 WHERE id = 1",
+                params![enabled as i64],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn get_enable_password_history(&self) -> Result<bool> {
+        self.with_conn(|c| {
+            let enabled: i64 = c
+                .query_row(
+                    "SELECT enable_password_history FROM vault_meta WHERE id = 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(1);
+            Ok(enabled != 0)
+        })
+    }
+
+    pub fn set_enable_password_history(&self, enabled: bool) -> Result<()> {
+        self.with_conn(|c| {
+            c.execute(
+                "UPDATE vault_meta SET enable_password_history = ?1 WHERE id = 1",
+                params![enabled as i64],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn get_fido2_status(&self) -> Result<(bool, Option<Vec<u8>>, Option<Vec<u8>>)> {
+        self.with_conn(|c| {
+            let row = c
+                .query_row(
+                    "SELECT fido2_enabled, fido2_credential_id, fido2_wrapped_key FROM vault_meta WHERE id = 1",
+                    [],
+                    |r| {
+                        let enabled: i64 = r.get(0)?;
+                        let cred_id: Option<Vec<u8>> = r.get(1)?;
+                        let wrapped: Option<Vec<u8>> = r.get(2)?;
+                        Ok((enabled != 0, cred_id, wrapped))
+                    },
+                )
+                .optional()?;
+            match row {
+                Some((enabled, cred_id, wrapped)) => Ok((enabled, cred_id, wrapped)),
+                None => Ok((false, None, None)),
+            }
+        })
+    }
+
+    pub fn get_fido2_keys(&self) -> Result<Vec<Fido2KeyRow>> {
+        self.with_conn(|c| {
+            let mut stmt = c.prepare("SELECT id, name, credential_id, public_key, fido2_wrapped_key, created_at, aaguid, require_pin FROM fido2_keys ORDER BY created_at ASC")?;
+            let rows = stmt.query_map([], |r| {
+                Ok(Fido2KeyRow {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    credential_id: r.get(2)?,
+                    public_key: r.get(3)?,
+                    fido2_wrapped_key: r.get(4)?,
+                    created_at: r.get(5)?,
+                    aaguid: r.get(6)?,
+                    require_pin: r.get::<_, i64>(7).unwrap_or(1) != 0,
+                })
+            })?;
+            let mut list = Vec::new();
+            for item in rows {
+                list.push(item?);
+            }
+            Ok(list)
+        })
+    }
+
+    pub fn add_fido2_key(&self, name: &str, credential_id: &[u8], public_key: &[u8], fido2_wrapped_key: &[u8], aaguid: Option<&str>, require_pin: bool) -> Result<Fido2KeyRow> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        let require_pin_i = if require_pin { 1i64 } else { 0i64 };
+        self.with_conn(|c| {
+            c.execute_batch("BEGIN IMMEDIATE")?;
+            let res: Result<()> = (|| {
+                c.execute(
+                    "INSERT INTO fido2_keys (id, name, credential_id, public_key, fido2_wrapped_key, created_at, aaguid, require_pin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![id, name, credential_id, public_key, fido2_wrapped_key, now, aaguid, require_pin_i],
+                )?;
+                c.execute(
+                    "UPDATE vault_meta SET fido2_enabled = 1, fido2_credential_id = ?1, fido2_public_key = ?2, fido2_wrapped_key = ?3 WHERE id = 1",
+                    params![credential_id, public_key, fido2_wrapped_key],
+                )?;
+                Ok(())
+            })();
+            match res {
+                Ok(()) => {
+                    c.execute_batch("COMMIT")?;
+                    Ok(Fido2KeyRow {
+                        id,
+                        name: name.to_string(),
+                        credential_id: credential_id.to_vec(),
+                        public_key: Some(public_key.to_vec()),
+                        fido2_wrapped_key: fido2_wrapped_key.to_vec(),
+                        created_at: now,
+                        aaguid: aaguid.map(|s| s.to_string()),
+                        require_pin,
+                    })
+                }
+                Err(e) => {
+                    let _ = c.execute_batch("ROLLBACK");
+                    Err(e)
+                }
+            }
+        })
+    }
+
+    pub fn delete_fido2_key(&self, id: &str) -> Result<()> {
+        self.with_conn(|c| {
+            c.execute_batch("BEGIN IMMEDIATE")?;
+            let res: Result<()> = (|| {
+                c.execute("DELETE FROM fido2_keys WHERE id = ?1", params![id])?;
+                let count: i64 = c.query_row("SELECT COUNT(*) FROM fido2_keys", [], |r| r.get(0))?;
+                if count == 0 {
+                    c.execute(
+                        "UPDATE vault_meta SET fido2_enabled = 0, fido2_credential_id = NULL, fido2_public_key = NULL, fido2_wrapped_key = NULL WHERE id = 1",
+                        [],
+                    )?;
+                } else {
+                    // Update vault_meta with first key for legacy readers
+                    let first: Option<(Vec<u8>, Option<Vec<u8>>, Vec<u8>)> = c
+                        .query_row(
+                            "SELECT credential_id, public_key, fido2_wrapped_key FROM fido2_keys LIMIT 1",
+                            [],
+                            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                        )
+                        .optional()?;
+                    if let Some((cid, pk, wr)) = first {
+                        c.execute(
+                            "UPDATE vault_meta SET fido2_enabled = 1, fido2_credential_id = ?1, fido2_public_key = ?2, fido2_wrapped_key = ?3 WHERE id = 1",
+                            params![cid, pk, wr],
+                        )?;
+                    }
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(()) => {
+                    c.execute_batch("COMMIT")?;
+                    Ok(())
+                }
+                Err(e) => {
+                    let _ = c.execute_batch("ROLLBACK");
+                    Err(e)
+                }
+            }
+        })
+    }
+
+    pub fn delete_all_fido2_keys(&self) -> Result<()> {
+        self.with_conn(|c| {
+            c.execute_batch("BEGIN IMMEDIATE")?;
+            let res: Result<()> = (|| {
+                c.execute("DELETE FROM fido2_keys", [])?;
+                c.execute(
+                    "UPDATE vault_meta SET fido2_enabled = 0, fido2_credential_id = NULL, fido2_public_key = NULL, fido2_wrapped_key = NULL WHERE id = 1",
+                    [],
+                )?;
+                Ok(())
+            })();
+            match res {
+                Ok(()) => {
+                    c.execute_batch("COMMIT")?;
+                    Ok(())
+                }
+                Err(e) => {
+                    let _ = c.execute_batch("ROLLBACK");
+                    Err(e)
+                }
+            }
+        })
+    }
+
+    pub fn set_fido2_key(&self, credential_id: &[u8], public_key: &[u8], fido2_wrapped_key: &[u8]) -> Result<()> {
+        self.add_fido2_key("Рутокен MFA / FIDO2 Ключ", credential_id, public_key, fido2_wrapped_key, None, true)?;
+        Ok(())
+    }
+
+    pub fn disable_fido2_key(&self) -> Result<()> {
+        self.delete_all_fido2_keys()
     }
 }
 

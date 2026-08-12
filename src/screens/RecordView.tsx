@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, Pencil, ShieldCheck, Trash2 } from "lucide-react";
-import { apiRecordDelete, apiRecordGet, type RecordModel } from "@/lib/api";
+import { apiRecordDelete, apiRecordGet, apiGetEnableHealthCheck, type RecordModel } from "@/lib/api";
 import { IconButton } from "@/components/ui/IconButton";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -9,6 +9,7 @@ import { FieldRow } from "@/components/FieldRow";
 import { formatRelativeTime } from "@/lib/format";
 import { Sheet } from "@/components/ui/Sheet";
 import { useTranslation, Trans } from 'react-i18next';
+import { isPasswordWeak } from "@/lib/healthCheck";
 
 // M-04: через сколько мс автоматически ре-маскировать раскрытый на экране секрет.
 const REVEAL_HIDE_MS = 30_000;
@@ -38,8 +39,13 @@ export function RecordView({
   const [record, setRecord] = useState<RecordModel | null>(null);
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [enableHealthCheck, setEnableHealthCheck] = useState(true);
   const toast = useToast();
   const { t } = useTranslation();
+
+  useEffect(() => {
+    apiGetEnableHealthCheck().then(setEnableHealthCheck).catch(() => {});
+  }, []);
 
   // M-04: раскрытый на экране секрет не должен висеть в state/DOM бесконечно.
   // Через REVEAL_HIDE_MS автоматически ре-маскируем поле (согласовано с
@@ -172,38 +178,56 @@ export function RecordView({
             {t('recordView.noFields')}
           </div>
         )}
-        {record.fields.map((f) => (
-          <FieldRow
-            key={f.id}
-            field={f}
-            revealedValue={revealed[f.id]}
-            onReveal={async () => {
-              const v = await onReveal(record.id, f.id);
-              setRevealed((cur) => ({ ...cur, [f.id]: v }));
-              // M-04: запускаем авто-скрытие этого поля.
-              clearTimer(f.id);
-              hideTimers.current[f.id] = setTimeout(() => {
-                setRevealed((cur) => {
-                  const next = { ...cur };
-                  delete next[f.id];
-                  return next;
-                });
-                delete hideTimers.current[f.id];
-              }, REVEAL_HIDE_MS);
-            }}
-            onHide={() => {
-              clearTimer(f.id);
-              setRevealed((cur) => {
-                const next = { ...cur };
-                delete next[f.id];
-                return next;
-              });
-            }}
-            onCopy={async () => {
-              await onCopy(record.id, f.id);
-            }}
-          />
-        ))}
+        {record.fields.map((f) => {
+          const isSecretField = f.is_secret || f.field_type === "secret";
+          const valToCheck = revealed[f.id] || (f.value_preview !== "••••••••" ? f.value_preview : "");
+          const isWeak = enableHealthCheck && isSecretField && valToCheck && isPasswordWeak(valToCheck);
+
+          return (
+            <div key={f.id} className="space-y-1">
+              <FieldRow
+                field={f}
+                revealedValue={revealed[f.id]}
+                onReveal={async () => {
+                  const v = await onReveal(record.id, f.id);
+                  setRevealed((cur) => ({ ...cur, [f.id]: v }));
+                  // M-04: запускаем авто-скрытие этого поля.
+                  clearTimer(f.id);
+                  hideTimers.current[f.id] = setTimeout(() => {
+                    setRevealed((cur) => {
+                      const next = { ...cur };
+                      delete next[f.id];
+                      return next;
+                    });
+                    delete hideTimers.current[f.id];
+                  }, REVEAL_HIDE_MS);
+                }}
+                onHide={() => {
+                  clearTimer(f.id);
+                  setRevealed((cur) => {
+                    const next = { ...cur };
+                    delete next[f.id];
+                    return next;
+                  });
+                }}
+                onCopy={async () => {
+                  await onCopy(record.id, f.id);
+                }}
+              />
+              {isWeak && (
+                <div className="text-2xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-1.5 flex items-center gap-1.5 font-medium">
+                  ⚠️ {t('healthCheck.weak')} — пароль слишком простой или короткий (&lt;8 символов)
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        <PasswordHistorySection
+          dbType={dbType}
+          recordId={recordId}
+          onRestore={refresh}
+        />
 
         <div className="text-2xs text-white/35 text-center pt-4">
           {t('recordView.updatedAt', { time: formatRelativeTime(record.updated_at) })}
@@ -233,6 +257,164 @@ export function RecordView({
           </div>
         </div>
       </Sheet>
+    </div>
+  );
+}
+
+function PasswordHistorySection({
+  dbType,
+  recordId,
+  onRestore,
+}: {
+  dbType: "records" | "web";
+  recordId: string;
+  onRestore: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [enabled, setEnabled] = useState(true);
+  const [history, setHistory] = useState<import("@/lib/api").PasswordHistoryEntry[]>([]);
+  const toast = useToast();
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    import("@/lib/api").then(m => m.apiGetEnablePasswordHistory()).then(setEnabled).catch(() => {});
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const items = await import("@/lib/api").then((m) =>
+        m.apiGetPasswordHistory(dbType, recordId),
+      );
+      setHistory(items);
+    } catch {
+      setHistory([]);
+    }
+  }, [dbType, recordId]);
+
+  useEffect(() => {
+    if (open && enabled) {
+      loadHistory();
+    }
+  }, [open, enabled, loadHistory]);
+
+  if (!enabled) return null;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full mt-2 card-flat p-3 flex items-center justify-between text-xs text-white/60 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
+      >
+        <span className="flex items-center gap-2 font-medium">
+          📜 {t('recordView.historyTitle')}
+        </span>
+        <span className="text-2xs text-white/40">▼</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 card-flat p-3 space-y-2.5">
+      <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
+        <span className="text-xs font-semibold text-white/85 flex items-center gap-1.5">
+          📜 {t('recordView.historyTitle')} ({history.length})
+        </span>
+        <div className="flex items-center gap-2">
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={async () => {
+                const api = await import("@/lib/api");
+                await api.apiClearPasswordHistory(dbType, recordId);
+                setHistory([]);
+              }}
+              className="text-2xs text-red-400/80 hover:text-red-300"
+            >
+              {t('recordView.historyClear')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="text-2xs text-white/40 hover:text-white/80"
+          >
+            ▲
+          </button>
+        </div>
+      </div>
+
+      {history.length === 0 ? (
+        <div className="text-2xs text-white/40 text-center py-2">
+          {t('recordView.historyEmpty')}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {history.map((h) => (
+            <div
+              key={h.id}
+              className="bg-black/20 border border-white/[0.05] rounded-lg p-2.5 flex items-center justify-between gap-2 text-xs"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="text-2xs text-white/40 flex items-center gap-1">
+                  <span>{h.field_label}</span>
+                  <span>•</span>
+                  <span>{formatRelativeTime(h.created_at)}</span>
+                </div>
+                <div className="font-mono text-white/80 truncate">••••••••••••</div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  title={t('common.copy')}
+                  onClick={async () => {
+                    const api = await import("@/lib/api");
+                    await api.apiClipboardCopyText(h.value, 30);
+                    toast.success(t('common.copy'));
+                  }}
+                  className="p-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white text-2xs"
+                >
+                  📋
+                </button>
+                <button
+                  type="button"
+                  title={t('recordView.historyRestore')}
+                  onClick={async () => {
+                    try {
+                      const api = await import("@/lib/api");
+                      const curRecord = await api.apiRecordGet(dbType, recordId);
+                      const updatedFields = curRecord.fields.map((f) => ({
+                        id: f.id,
+                        field_type: f.field_type,
+                        label: f.label,
+                        is_secret: f.is_secret,
+                        sort_order: f.sort_order,
+                        value: f.id === h.field_id ? h.value : null,
+                      }));
+                      await api.apiRecordUpdate(dbType, recordId, {
+                        name: curRecord.name,
+                        project: curRecord.project,
+                        icon: curRecord.icon,
+                        color: curRecord.color,
+                        category: curRecord.category,
+                        fields: updatedFields,
+                      });
+                      toast.success(t('recordView.historyRestoredToast'));
+                      onRestore();
+                      loadHistory();
+                    } catch {
+                      toast.error(t('sanitizeError.defaultMessage'));
+                    }
+                  }}
+                  className="px-2 py-1 bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 text-2xs font-medium rounded"
+                >
+                  {t('recordView.historyRestore')}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
