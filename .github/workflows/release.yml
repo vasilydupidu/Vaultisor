@@ -67,28 +67,49 @@ jobs:
           body: |
             ## Vaultisor ${{ github.ref_name }} 🛡️
             
-            Защищённое автономное (Air-Gapped) Windows-приложение для локального хранения технических секретов, API-ключей, сертификатов и паролей сайтов.
+            [**Русский**](#-что-нового-в-версии-270) | [**English**](#-whats-new-in-v270)
             
-            ### 🌟 Что нового в версии 2.7.0:
+            ---
+            
+            ### 🇷🇺 Что нового в версии 2.7.0:
             
             - 🔑 **Аппаратные ключи FIDO2 / WebAuthn (Рутокен MFA, YubiKey и др.)**:
-              - **Полная переработка и универсальная поддержка FIDO2** через нативный API `webauthn.dll` (Windows 10/11).
+              - **Полный рефакторинг FFI** для нативной поддержки через системную библиотеку `webauthn.dll` (Windows 10/11).
               - **Два режима аутентификации**:
-                - 🛡️ **ПИН + Touch** (*Resident Key / User Verification Required*) — максимальная безопасность с вводом аппаратного ПИН-кода и касанием токена.
-                - 👆 **Touch-only** (*Passwordless 2FA / User Verification Discouraged*) — сверхбыстрая разблокировка по касанию без ПИН-кода.
-              - **Автоматическая идентификация по AAGUID**: Распознавание моделей ключей (Рутокен MFA, YubiKey 5 NFC/Nano/Bio, Security Key by Yubico и др.).
-              - **Мульти-ключи**: Подключение и управление несколькими ключами с отображением модели и модальным диалогом подтверждения удаления.
+                - 🛡️ **ПИН + Touch** (*Resident Key / User Verification Required*) — максимальная двухфакторная безопасность.
+                - 👆 **Touch-only** (*Passwordless 2FA / User Verification Discouraged*) — сверхбыстрая разблокировка по касанию без ввода ПИН-кода.
+              - **Автоматическая идентификация по AAGUID**: Точное определение моделей ключей (Рутокен MFA, YubiKey 5 NFC/Nano/Bio, Security Key by Yubico и др.).
+              - **Мульти-ключевой менеджмент**: Подключение нескольких токенов, отображение бейджей моделей и подтверждение удаления.
             
             - 🩺 **Анализ стойкости и подсветка слабых паролей (Health Check)**:
-              - Автоматический аудит и выявление дублирующихся (повторно используемых), коротких и простых паролей.
-              - Наглядная цветовая индикация уровня безопасности и предупреждения в реальном времени.
+              - Автоматический аудит и подсвечивание повторно используемых (дублирующихся), коротких и простых паролей.
             
             - 📜 **История паролей**:
-              - Автоматическое сохранение предыдущих ревизий паролей при редактировании секрета.
-              - Безопасный просмотр истории изменений и копирование старых значений.
+              - Автоматическое сохранение прошлых ревизий паролей с возможностью безопасного просмотра и копирования старых значений.
             
             - 🌐 **Мультиязычный интерфейс (i18n RU / EN)**:
-              - Полная поддержка двух языков с мгновенным переключением в настройках.
+              - Переключение языка «на лету» с сохранением настроек.
+            
+            ---
+            
+            ### 🇬🇧 What's new in v2.7.0:
+            
+            - 🔑 **FIDO2 / WebAuthn Hardware Security Keys (Rutoken MFA, YubiKey, etc.)**:
+              - **Full FFI Refactor** for native support via Windows `webauthn.dll` API (Windows 10/11).
+              - **Dual Authentication Modes**:
+                - 🛡️ **PIN + Touch** (*Resident Key / User Verification Required*) — maximum 2FA security requiring hardware PIN + token tap.
+                - 👆 **Touch-only** (*Passwordless 2FA / User Verification Discouraged*) — instant vault unlock on token contact without PIN entry.
+              - **AAGUID Model Auto-Detection**: Identifies physical hardware models out-of-the-box (Rutoken MFA, YubiKey 5 NFC/Nano/Bio, Security Key by Yubico, etc.).
+              - **Multi-Key Management**: Register multiple security keys, view model badges, and manage keys with deletion confirmation dialogs.
+            
+            - 🩺 **Password Health Check & Security Audit**:
+              - Real-time audit highlighting duplicate (reused), weak, or simple passwords across your vault.
+            
+            - 📜 **Password History**:
+              - Automatic versioning of previous password revisions whenever credentials are edited, with dedicated history view.
+            
+            - 🌐 **Multilingual UI (i18n RU / EN)**:
+              - Instant language switching with encrypted preference persistence.
           draft: false
           prerelease: false
         env:
