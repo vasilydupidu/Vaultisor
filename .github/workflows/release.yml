@@ -67,49 +67,43 @@ jobs:
           body: |
             ## Vaultisor ${{ github.ref_name }} 🛡️
             
-            [**Русский**](#-что-нового-в-версии-270) | [**English**](#-whats-new-in-v270)
+            [**Русский**](#-что-нового-в-версии-280) | [**English**](#-whats-new-in-v280)
             
             ---
             
-            ### 🇷🇺 Что нового в версии 2.7.0:
+            ### 🇷🇺 Что нового в версии 2.8.0 (Security & Bug Fixes):
             
-            - 🔑 **Аппаратные ключи FIDO2 / WebAuthn (Рутокен MFA, YubiKey и др.)**:
-              - **Полный рефакторинг FFI** для нативной поддержки через системную библиотеку `webauthn.dll` (Windows 10/11).
-              - **Два режима аутентификации**:
-                - 🛡️ **ПИН + Touch** (*Resident Key / User Verification Required*) — максимальная двухфакторная безопасность.
-                - 👆 **Touch-only** (*Passwordless 2FA / User Verification Discouraged*) — сверхбыстрая разблокировка по касанию без ввода ПИН-кода.
-              - **Автоматическая идентификация по AAGUID**: Точное определение моделей ключей (Рутокен MFA, YubiKey 5 NFC/Nano/Bio, Security Key by Yubico и др.).
-              - **Мульти-ключевой менеджмент**: Подключение нескольких токенов, отображение бейджей моделей и подтверждение удаления.
+            - 🛡️ **Аппаратная привязка FIDO2 (PRF Extension)**:
+              - Реализован вывод аппаратного ключа шифрования (KEK) через HMAC-Secret / PRF Extension протокола CTAP2/WebAuthn.
+              - Автоматическая бесшовная миграция существующих ключей на аппаратный KEK (v2) при первой разблокировке.
             
-            - 🩺 **Анализ стойкости и подсветка слабых паролей (Health Check)**:
-              - Автоматический аудит и подсвечивание повторно используемых (дублирующихся), коротких и простых паролей.
+            - 🔒 **Защита резервных копий (Backup Sanitization)**:
+              - Автоматическая санитизация `meta.db` перед формированием бандлов `.vault`: полное удаление хэшей PIN (`pin_hash`), исключающее оффлайн-перебор украденных копий.
             
-            - 📜 **История паролей**:
-              - Автоматическое сохранение прошлых ревизий паролей с возможностью безопасного просмотра и копирования старых значений.
+            - 🔑 **Уникальная энтропия DPAPI для каждого хранилища**:
+              - Генерация криптографически стойкой индивидуальной 32-байтной энтропии на каждое хранилище вместо статического значения.
             
-            - 🌐 **Мультиязычный интерфейс (i18n RU / EN)**:
-              - Переключение языка «на лету» с сохранением настроек.
+            - 🧩 **Усиление криптографических примитивов**:
+              - Стандартизированный HKDF (RFC 5869) из библиотеки RustCrypto.
+              - Расширенное тестирование и валидация схемы разделения секрета Шамира (Shamir Secret Sharing).
             
             ---
             
-            ### 🇬🇧 What's new in v2.7.0:
+            ### 🇬🇧 What's new in v2.8.0 (Security & Bug Fixes):
             
-            - 🔑 **FIDO2 / WebAuthn Hardware Security Keys (Rutoken MFA, YubiKey, etc.)**:
-              - **Full FFI Refactor** for native support via Windows `webauthn.dll` API (Windows 10/11).
-              - **Dual Authentication Modes**:
-                - 🛡️ **PIN + Touch** (*Resident Key / User Verification Required*) — maximum 2FA security requiring hardware PIN + token tap.
-                - 👆 **Touch-only** (*Passwordless 2FA / User Verification Discouraged*) — instant vault unlock on token contact without PIN entry.
-              - **AAGUID Model Auto-Detection**: Identifies physical hardware models out-of-the-box (Rutoken MFA, YubiKey 5 NFC/Nano/Bio, Security Key by Yubico, etc.).
-              - **Multi-Key Management**: Register multiple security keys, view model badges, and manage keys with deletion confirmation dialogs.
+            - 🛡️ **FIDO2 Hardware Key Derivation (PRF Extension)**:
+              - Implemented hardware-bound Key Encryption Key (KEK) derivation via WebAuthn / CTAP2 HMAC-Secret (PRF Extension).
+              - Seamless on-the-fly migration of legacy keys to hardware-bound KEK (v2) on successful unlock.
             
-            - 🩺 **Password Health Check & Security Audit**:
-              - Real-time audit highlighting duplicate (reused), weak, or simple passwords across your vault.
+            - 🔒 **Backup Sanitization**:
+              - Automated `meta.db` sanitization prior to `.vault` bundle packaging: completely strips PIN hashes (`pin_hash`) to eliminate offline bruteforce risks.
             
-            - 📜 **Password History**:
-              - Automatic versioning of previous password revisions whenever credentials are edited, with dedicated history view.
+            - 🔑 **Per-Vault DPAPI Entropy**:
+              - Upgraded from static DPAPI entropy to per-vault 32-byte CSPRNG random entropy for all DPAPI-protected blobs.
             
-            - 🌐 **Multilingual UI (i18n RU / EN)**:
-              - Instant language switching with encrypted preference persistence.
+            - 🧩 **Cryptographic Hardening**:
+              - Standardized RFC 5869 HKDF implementation via RustCrypto.
+              - Expanded comprehensive test suite for Shamir Secret Sharing edge cases and corruption detection.
           draft: false
           prerelease: false
         env:

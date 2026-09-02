@@ -33,6 +33,13 @@
 - 🧩 **Восстановление через разделение секрета Шамира (Shamir Secret Sharing)**: Мастер-ключ можно разделить на N частей (например, 2 из 3) для безопасного восстановления без мастер-пароля.
 - 🌐 **Мультиязычный интерфейс (RU / EN)**: Полная локализация интерфейса с переключением на лету и сохранением выбора в зашифрованных настройках.
 
+### 🚀 Что нового в версии 2.8.0 (Security & Bug Fixes)
+
+- 🛡️ **Аппаратный KEK FIDO2 (PRF Extension)**: Интеграция расширения PRF / HMAC-Secret протокола CTAP2/WebAuthn для вывода аппаратного ключа шифрования (KEK). Автоматическая бесшовная миграция старых ключей на аппаратный KEK (v2) на лету.
+- 🔒 **Санитизация резервных копий**: Полное удаление хэшей PIN (`pin_hash`) при создании резервных копий `.vault` (защита от оффлайн-перебора).
+- 🔑 **Индивидуальная DPAPI-энтропия**: Генерация криптографически стойкой 32-байтной энтропии на каждое хранилище вместо статического значения.
+- 🧩 **Усиление криптографии**: Стандартная реализация HKDF (RFC 5869) из библиотеки RustCrypto и полное тестовое покрытие схемы разделения секрета Шамира.
+
 ### 🛠️ Технологический стек
 
 - **Core / Backend**: Rust 2021, Tauri v2, SQLCipher (AES-256-GCM), Argon2id KDF, Windows CNG / DPAPI / `webauthn.dll`.
@@ -55,7 +62,7 @@ cargo test --workspace
 # Сборка портативного .exe бинарника
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -SkipDeps
 ```
-Исполняемый файл появится в каталоге `release/Vaultisor-2.7.0.exe`.
+Исполняемый файл появится в каталоге `release/Vaultisor-2.8.0.exe`.
 
 ---
 
@@ -88,6 +95,13 @@ powershell -ExecutionPolicy Bypass -File .\build.ps1 -SkipDeps
 - 🧩 **Shamir Secret Sharing Recovery**: Split master key recovery into N shares (e.g. 2-of-3 quorum) for emergency vault recovery.
 - 🌐 **Multilingual UI (RU / EN)**: Full internationalization with instant language switching and encrypted preference storage.
 
+### 🚀 What's new in v2.8.0 (Security & Bug Fixes)
+
+- 🛡️ **FIDO2 Hardware Key Derivation (PRF Extension)**: CTAP2 / WebAuthn PRF / HMAC-Secret extension integration for deriving hardware-bound Key Encryption Keys (KEK). Includes automatic seamless on-the-fly migration of legacy keys on unlock.
+- 🔒 **Backup Sanitization**: Completely strips PIN hashes (`pin_hash`) during `.vault` backup creation to eliminate offline brute-force attack vectors.
+- 🔑 **Per-Vault DPAPI Entropy**: Individual 32-byte CSPRNG random entropy per vault for all DPAPI protections instead of a global static value.
+- 🧩 **Cryptographic Hardening**: Standardized RFC 5869 HKDF implementation via RustCrypto and comprehensive test suite for Shamir Secret Sharing.
+
 ### 🛠️ Tech Stack
 
 - **Core / Backend**: Rust 2021, Tauri v2, SQLCipher (AES-256-GCM), Argon2id KDF, Windows CNG / DPAPI / `webauthn.dll`.
@@ -110,7 +124,7 @@ cargo test --workspace
 # Build portable .exe binary
 powershell -ExecutionPolicy Bypass -File .\build.ps1 -SkipDeps
 ```
-The compiled executable will be saved at `release/Vaultisor-2.7.0.exe`.
+The compiled executable will be saved at `release/Vaultisor-2.8.0.exe`.
 
 ---
 
