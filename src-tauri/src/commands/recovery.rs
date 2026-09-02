@@ -108,7 +108,13 @@ pub async fn recovery_restore(
         if path.exists() {
             if let Ok(db0) = MetaDb::open(&path) {
                 if let Ok(Some((ax, ay_dpapi))) = db0.load_recovery_local() {
-                    let ay = crate::windows_api::dpapi::unprotect(&ay_dpapi).ok();
+                    // VULN-06 FIX: пробуем per-vault entropy, затем дефолт.
+                    let meta_ent = db0.vault_load().ok().flatten()
+                        .and_then(|m| m.dpapi_entropy);
+                    let entropy = crate::storage::db::effective_entropy(meta_ent.as_deref());
+                    let ay = crate::windows_api::dpapi::unprotect_with_entropy(&ay_dpapi, entropy)
+                        .or_else(|_| crate::windows_api::dpapi::unprotect_with_entropy(&ay_dpapi, b"vaultisor:dpapi:v1"))
+                        .ok();
                     if let Some(ay) = ay {
                         if !shares.iter().any(|s| s.x == ax) {
                             shares.push(Share { x: ax, y: ay.to_vec() });
@@ -190,7 +196,11 @@ pub async fn recovery_restore(
         ds_data = None;
     }
 
-    let stored = wrap_dpapi_layer(&wrapped)?;
+    // VULN-06 FIX: генерируем per-vault DPAPI entropy для нового vault'а.
+    let mut dpapi_entropy = [0u8; 32];
+    crate::crypto::rng::fill(&mut dpapi_entropy);
+
+    let stored = wrap_dpapi_layer(&wrapped, Some(&dpapi_entropy))?;
     // AUDIT (pentest P0): не храним Argon2id-хэш PIN (оффлайн-оракул перебора).
     let pin_hash = String::new();
 
@@ -200,7 +210,7 @@ pub async fn recovery_restore(
     //    при компрометации устройства.
     let mut integrity_key = zeroize::Zeroizing::new([0u8; 32]);
     crate::crypto::rng::fill(integrity_key.as_mut_slice());
-    let integrity_key_dpapi = crate::windows_api::dpapi::protect(&integrity_key[..])?;
+    let integrity_key_dpapi = crate::windows_api::dpapi::protect_with_entropy(&integrity_key[..], &dpapi_entropy)?;
 
     let path = state.meta_path();
     let db = MetaDb::open(&path)?;
@@ -210,6 +220,8 @@ pub async fn recovery_restore(
         // последующих update_meta_secure-вызовах для пересчёта MAC.
         db.set_integrity_key_and_seal(&integrity_key_dpapi, &*integrity_key)?;
         db.update_wrapped_master(&*integrity_key, &stored, &pin_hash)?;
+        // Обновляем dpapi_entropy в meta
+        db.set_dpapi_entropy(&dpapi_entropy)?;
         // Hello-обёртка из старой машины более невалидна — стираем.
         db.clear_hello_wrapped(&*integrity_key)?;
         // TPM-credential из старой машины тоже бесполезен (привязан к чужому TPM).
@@ -243,6 +255,7 @@ pub async fn recovery_restore(
             defaults.max_pin_attempts,
             &integrity_key_dpapi,
             &*integrity_key,
+            Some(&dpapi_entropy),
         )?;
     }
 
@@ -322,6 +335,7 @@ pub fn recovery_regenerate(state: State<'_, AppState>) -> Result<RecoveryRegener
 
     let path = state.meta_path();
     let db = MetaDb::open(&path)?;
+    let meta = db.vault_load()?.ok_or(VaultError::NotInitialized)?;
 
     let shares = master.with_decrypted(|decrypted| {
         split_secret(decrypted, 2, 3)
@@ -330,8 +344,9 @@ pub fn recovery_regenerate(state: State<'_, AppState>) -> Result<RecoveryRegener
     let share_b = &shares[1];
     let share_c = &shares[2];
 
-    // Сохраняем долю A локально (DPAPI-обёрнутую на Windows).
-    let y_dpapi = crate::windows_api::dpapi::protect(&share_a.y)?;
+    // Сохраняем долю A локально (DPAPI-обёрнутую с per-vault entropy).
+    let entropy = crate::storage::db::effective_entropy(meta.dpapi_entropy.as_deref());
+    let y_dpapi = crate::windows_api::dpapi::protect_with_entropy(&share_a.y, entropy)?;
     db.save_recovery_local(share_a.x, &y_dpapi)?;
 
     Ok(RecoveryRegenerateOutput {

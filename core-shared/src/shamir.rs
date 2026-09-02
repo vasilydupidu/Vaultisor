@@ -190,12 +190,76 @@ mod tests {
     }
 
     #[test]
-    fn split_and_combine_2_of_3() {
+    fn split_and_combine_2_of_3_all_pairs() {
         let secret = b"my-32-byte-master-key-aaaaaaaa!!";
         let shares = split_secret(secret, 2, 3).unwrap();
         assert_eq!(shares.len(), 3);
 
-        let s = combine_shares(&[shares[0].clone(), shares[1].clone()], 2).unwrap();
-        assert_eq!(s.as_slice(), secret);
+        // All 3 pairs of 2-of-3 must reconstruct the exact secret
+        let pairs = [
+            (0, 1),
+            (0, 2),
+            (1, 2),
+        ];
+
+        for (i, j) in pairs {
+            let recovered = combine_shares(&[shares[i].clone(), shares[j].clone()], 2).unwrap();
+            assert_eq!(recovered.as_slice(), secret, "Failed on pair ({i}, {j})");
+        }
+    }
+
+    #[test]
+    fn split_and_combine_3_of_5_all_triplets() {
+        let secret = b"32-byte-secret-for-3-of-5-test!!";
+        let shares = split_secret(secret, 3, 5).unwrap();
+        assert_eq!(shares.len(), 5);
+
+        // Test all 10 combinations of 3 shares out of 5
+        for i in 0..5 {
+            for j in (i + 1)..5 {
+                for k in (j + 1)..5 {
+                    let subset = vec![shares[i].clone(), shares[j].clone(), shares[k].clone()];
+                    let recovered = combine_shares(&subset, 3).unwrap();
+                    assert_eq!(recovered.as_slice(), secret, "Failed on triplet ({i}, {j}, {k})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shamir_insufficient_shares_error() {
+        let secret = b"secret-bytes-1234";
+        let shares = split_secret(secret, 3, 5).unwrap();
+        // 2 shares when threshold is 3 must return error
+        let err = combine_shares(&[shares[0].clone(), shares[1].clone()], 3);
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn shamir_duplicate_x_rejected() {
+        let secret = b"secret-bytes-1234";
+        let shares = split_secret(secret, 2, 3).unwrap();
+        let mut dup_shares = vec![shares[0].clone(), shares[0].clone()];
+        dup_shares[1].x = shares[0].x;
+        assert!(combine_shares(&dup_shares, 2).is_err());
+    }
+
+    #[test]
+    fn shamir_invalid_parameters_rejected() {
+        let secret = b"valid-secret";
+        assert!(split_secret(secret, 1, 3).is_err(), "threshold < 2 must be rejected");
+        assert!(split_secret(secret, 4, 3).is_err(), "threshold > n must be rejected");
+        assert!(split_secret(secret, 2, 0).is_err(), "n = 0 must be rejected");
+        assert!(split_secret(b"", 2, 3).is_err(), "empty secret must be rejected");
+    }
+
+    #[test]
+    fn shamir_corrupted_shares_fail_or_differ() {
+        let secret = b"sensitive-vault-master-key-32b!!";
+        let mut shares = split_secret(secret, 2, 3).unwrap();
+        // Corrupt one byte of share 0
+        shares[0].y[0] ^= 0xFF;
+        let recovered = combine_shares(&[shares[0].clone(), shares[1].clone()], 2).unwrap();
+        assert_ne!(recovered.as_slice(), secret, "Corrupted share must not recover original secret");
     }
 }

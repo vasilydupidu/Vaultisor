@@ -93,9 +93,10 @@ pub async fn settings_update(
                     )
                     .await?;
                 cred_name = credential.stored_id;
-                let (ek, ct, dk_encrypted, tpm_wrapped_key) =
-                    crate::commands::vault::wrap_hello_v2(&master_key, &credential.signature)?;
                 let db = state.open_meta()?;
+                let meta = db.vault_load()?.ok_or(VaultError::NotInitialized)?;
+                let (ek, ct, dk_encrypted, tpm_wrapped_key) =
+                    crate::commands::vault::wrap_hello_v2(&master_key, &credential.signature, meta.dpapi_entropy.as_deref())?;
                 db.save_tpm_wrap(&*integrity_key, &cred_name, &tpm_wrapped_key)?;
                 db.save_pq_hello(&*integrity_key, &ek, &ct, &dk_encrypted)?;
                 Ok::<(), VaultError>(())
@@ -298,14 +299,45 @@ pub async fn register_fido2_key(name: Option<String>, require_pin: Option<bool>,
 
     let reg = reg?;
 
-    // Encrypt master_key for FIDO2 hardware unlock path
-    let fido2_kek = crate::crypto::kdf::hkdf_derive(&reg.credential_id, b"vaultisor:fido2-salt:v1", b"vaultisor:fido2-kek:v1", 32)?;
+    // VULN-01 FIX: проверяем поддержку PRF (hmac-secret).
+    // Если аутентификатор не поддерживает PRF, привязка не обеспечивает
+    // аппаратную защиту KEK → отказываем в регистрации.
+    if !reg.prf_supported {
+        return Err(VaultError::BadInput(
+            "Ваш FIDO2-ключ не поддерживает расширение PRF (hmac-secret). \
+             Привязка невозможна — KEK не может быть аппаратно защищён. \
+             Используйте ключ с поддержкой CTAP2 hmac-secret (Рутокен MFA, YubiKey 5+)."
+            .into(),
+        ));
+    }
+
+    // VULN-01 FIX: немедленно выполняем assertion с PRF salt, чтобы получить
+    // hardware-bound secret для вывода KEK.
+    let cred_ids = vec![reg.credential_id.clone()];
+    let assertion = tokio::task::spawn_blocking(move || {
+        crate::auth::fido2::assert_fido2_key_prompt(&cred_ids, pin_mode)
+    })
+    .await
+    .map_err(|e| VaultError::BadInput(format!("ошибка PRF assertion: {e}")))?;
+
+    let assertion = assertion?;
+
+    let prf_output = assertion.prf_output.ok_or_else(|| VaultError::BadInput(
+        "FIDO2-ключ поддерживает PRF, но не вернул PRF-output при assertion. \
+         Возможно, требуется обновление ОС (Windows 11 21H2+).".into(),
+    ))?;
+
+    // VULN-01 FIX: KEK выводится из PRF-output (hardware-bound secret),
+    // а НЕ из публичного credential_id.
+    let fido2_kek = crate::crypto::kdf::hkdf_derive(
+        &prf_output, b"vaultisor:fido2-prf-kek-salt:v1", b"vaultisor:fido2-prf-kek:v1", 32)?;
     let mut kek_arr = [0u8; 32];
     kek_arr.copy_from_slice(&fido2_kek);
 
     let fido2_blob = master_key.with_decrypted(|dec| {
-        crate::crypto::aead::encrypt(&kek_arr, dec, b"vaultisor:fido2-wrap:v1")
+        crate::crypto::aead::encrypt(&kek_arr, dec, b"vaultisor:fido2-wrap:v2")
     })?;
+    zeroize::Zeroize::zeroize(&mut kek_arr);
     let fido2_wrapped_bytes = fido2_blob.to_bytes();
 
     let aaguid_hex = hex::encode(&reg.aaguid);

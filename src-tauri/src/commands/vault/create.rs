@@ -133,10 +133,14 @@ async fn vault_create_inner(
     }?;
     let (wrapped, ds_data) = wrapped_res;
 
+    // VULN-06 FIX: генерируем per-vault DPAPI entropy (32 bytes random).
+    let mut dpapi_entropy = [0u8; 32];
+    crate::crypto::rng::fill(&mut dpapi_entropy);
+
     // v0.2: сохраняем DPAPI-обёртку поверх (integrity, не криптозащита —
     // реальная защита = Device Secret в TPM).
     let stored = if input.use_dpapi {
-        wrap_dpapi_layer(&wrapped)?
+        wrap_dpapi_layer(&wrapped, Some(&dpapi_entropy))?
     } else {
         wrapped.to_bytes()
     };
@@ -150,7 +154,7 @@ async fn vault_create_inner(
     log::info!("vault_create step 6: integrity_key + DPAPI");
     let mut integrity_key = zeroize::Zeroizing::new([0u8; 32]);
     crate::crypto::rng::fill(integrity_key.as_mut_slice());
-    let integrity_key_dpapi = crate::windows_api::dpapi::protect(&integrity_key[..])?;
+    let integrity_key_dpapi = crate::windows_api::dpapi::protect_with_entropy(&integrity_key[..], &dpapi_entropy)?;
 
     log::info!("vault_create step 7: insert vault_meta with HMAC");
     let autolock = input.autolock_seconds.unwrap_or(300);
@@ -165,6 +169,7 @@ async fn vault_create_inner(
         10,
         &integrity_key_dpapi,
         &*integrity_key,
+        Some(&dpapi_entropy),
     )?;
 
     if let Some(ds) = ds_data {
@@ -223,7 +228,7 @@ async fn vault_create_inner(
                         .await?;
                 cred_name = credential.stored_id;
                 let (ek, ct, dk_encrypted, tpm_wrapped_key) =
-                    wrap_hello_v2(&master, &credential.signature)?;
+                    wrap_hello_v2(&master, &credential.signature, Some(&dpapi_entropy))?;
                 db.save_tpm_wrap(&*integrity_key, &cred_name, &tpm_wrapped_key)?;
                 db.save_pq_hello(&*integrity_key, &ek, &ct, &dk_encrypted)?;
                 Ok::<(), VaultError>(())
@@ -265,7 +270,7 @@ async fn vault_create_inner(
     let share_c = &shares[2];
 
     log::info!("vault_create step 10: saving recovery_local A");
-    let y_dpapi = crate::windows_api::dpapi::protect(&share_a.y)?;
+    let y_dpapi = crate::windows_api::dpapi::protect_with_entropy(&share_a.y, &dpapi_entropy)?;
     db.save_recovery_local(share_a.x, &y_dpapi)?;
 
     // 9) Обновляем in-memory settings (использовать реальный флаг Hello).

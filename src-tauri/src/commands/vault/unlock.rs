@@ -30,7 +30,7 @@ pub async fn vault_unlock(
     let integrity_key_dpapi = db
         .get_integrity_key_dpapi()?
         .ok_or(VaultError::DeviceMismatch)?;
-    let integrity_key = unwrap_integrity_key(&integrity_key_dpapi)?;
+    let integrity_key = unwrap_integrity_key(&integrity_key_dpapi, meta.dpapi_entropy.as_deref())?;
 
     // Шаг 2 — Проверка целостности vault_meta. Если кто-то отредактировал
     // БД (обнулил failed_pin_attempts, поднял max_pin_attempts и т.п.),
@@ -47,7 +47,7 @@ pub async fn vault_unlock(
     // KEK → AEAD-разворот мастера падает (InvalidPin). Отдельный pin_hash НЕ
     // используется (и больше не хранится — pentest P0: был оффлайн-оракул).
     // Шаг 5 — DPAPI-снятие master-обёртки.
-    let wrapped = unwrap_master_blob(&meta.wrapped_master_dpapi)?;
+    let wrapped = unwrap_master_blob(&meta.wrapped_master_dpapi, meta.dpapi_entropy.as_deref())?;
 
     // Шаг 6 — AES-GCM unwrap с Device Secret (или v1 legacy).
     let master = if meta.crypto_version >= 2 {

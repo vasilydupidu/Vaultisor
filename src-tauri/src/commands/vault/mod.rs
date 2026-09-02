@@ -51,13 +51,25 @@ pub(super) fn validate_user_path(p: &str) -> Result<&std::path::Path> {
 /// DPAPI-снятие integrity_key. Возвращает DEVICE_MISMATCH при ошибке —
 /// это однозначный признак чужой машины (DPAPI работает только в той же
 /// учётке Windows, на том же устройстве).
-pub(super) fn unwrap_integrity_key(blob: &[u8]) -> Result<zeroize::Zeroizing<[u8; 32]>> {
-    let plain =
-        crate::windows_api::dpapi::unprotect(blob).map_err(|_| VaultError::DeviceMismatch)?;
-    if plain.len() != 32 {
-        return Err(VaultError::Crypto("integrity key length".into()));
+/// VULN-06 FIX: пробует per-vault entropy, затем дефолт для обратной совместимости.
+pub(super) fn unwrap_integrity_key(blob: &[u8], dpapi_entropy: Option<&[u8]>) -> Result<zeroize::Zeroizing<[u8; 32]>> {
+    let try_unwrap = |entropy: &[u8]| -> Option<zeroize::Zeroizing<[u8; 32]>> {
+        let plain = crate::windows_api::dpapi::unprotect_with_entropy(blob, entropy).ok()?;
+        if plain.len() != 32 { return None; }
+        let mut k = zeroize::Zeroizing::new([0u8; 32]);
+        k.copy_from_slice(&plain);
+        Some(k)
+    };
+
+    // 1. Пробуем с per-vault entropy (если задана)
+    if let Some(ent) = dpapi_entropy {
+        if let Some(k) = try_unwrap(ent) {
+            return Ok(k);
+        }
     }
-    let mut k = zeroize::Zeroizing::new([0u8; 32]);
-    k.copy_from_slice(&plain);
-    Ok(k)
+    // 2. Fallback на дефолтную entropy (vault'ы, созданные до VULN-06 фикса)
+    if let Some(k) = try_unwrap(b"vaultisor:dpapi:v1") {
+        return Ok(k);
+    }
+    Err(VaultError::DeviceMismatch)
 }

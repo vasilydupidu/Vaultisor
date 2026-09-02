@@ -2,7 +2,6 @@
 
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::{Algorithm, Argon2, Params, Version};
-use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -53,35 +52,14 @@ pub fn argon2id_derive_key(passphrase: &[u8], salt: &[u8]) -> Result<Zeroizing<[
     Ok(out)
 }
 
-/// HKDF-SHA256 (extract-then-expand).
+/// HKDF-SHA256 (extract-then-expand) — audited RustCrypto implementation.
 pub fn hkdf_derive(secret: &[u8], salt: &[u8], info: &[u8], out_len: usize) -> Result<Zeroizing<Vec<u8>>> {
-    type HmacSha256 = Hmac<Sha256>;
+    use hkdf::Hkdf;
 
-    // Extract.
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(salt)
-        .map_err(|_| CoreError::Crypto("hkdf extract".into()))?;
-    mac.update(secret);
-    let prk = mac.finalize().into_bytes();
-
-    // Expand.
-    let hash_len = 32usize;
-    if out_len > 255 * hash_len {
-        return Err(CoreError::Crypto("hkdf out_len too big".into()));
-    }
-    let mut out = Vec::with_capacity(out_len);
-    let mut t: Vec<u8> = Vec::new();
-    let blocks = (out_len + hash_len - 1) / hash_len;
-    for i in 1..=blocks {
-        let mut mac = <HmacSha256 as Mac>::new_from_slice(&prk)
-            .map_err(|_| CoreError::Crypto("hkdf expand".into()))?;
-        mac.update(&t);
-        mac.update(info);
-        mac.update(&[i as u8]);
-        t = mac.finalize().into_bytes().to_vec();
-        out.extend_from_slice(&t);
-    }
-    out.truncate(out_len);
-    t.zeroize();
+    let hk = Hkdf::<Sha256>::new(Some(salt), secret);
+    let mut out = vec![0u8; out_len];
+    hk.expand(info, &mut out)
+        .map_err(|_| CoreError::Crypto("hkdf expand: output too long".into()))?;
     Ok(Zeroizing::new(out))
 }
 

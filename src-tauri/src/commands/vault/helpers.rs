@@ -27,8 +27,9 @@ pub(crate) async fn load_device_secret_and_unwrap(
 
 pub(crate) fn unwrap_master_blob(
     wrapped_master_dpapi: &[u8],
+    dpapi_entropy: Option<&[u8]>,
 ) -> Result<crate::crypto::master::WrappedKey> {
-    match crate::storage::db::unwrap_dpapi_layer(wrapped_master_dpapi) {
+    match crate::storage::db::unwrap_dpapi_layer(wrapped_master_dpapi, dpapi_entropy) {
         Ok(w) => Ok(w),
         Err(_) => crate::crypto::master::WrappedKey::from_bytes(wrapped_master_dpapi)
             .map_err(|_| VaultError::DeviceMismatch),

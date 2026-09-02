@@ -119,8 +119,10 @@ pub fn backup_now(state: State<'_, AppState>, dir: String) -> Result<BackupResul
 }
 
 /// Собрать VLT2-бандл из трёх зашифрованных БД (meta + records + web).
+/// VULN-05 FIX: meta.db санитизируется перед включением — pin_hash обнуляется.
 fn build_bundle(state: &AppState) -> Result<Vec<u8>> {
-    let meta = std::fs::read(state.meta_path())?;
+    let meta_raw = std::fs::read(state.meta_path())?;
+    let meta = sanitize_meta_for_export(&meta_raw)?;
     let records = std::fs::read(state.records_path())?;
     let web = std::fs::read(state.web_path())?;
     let mut out = Vec::with_capacity(16 + meta.len() + records.len() + web.len());
@@ -132,6 +134,37 @@ fn build_bundle(state: &AppState) -> Result<Vec<u8>> {
     out.extend_from_slice(&(web.len() as u32).to_le_bytes());
     out.extend_from_slice(&web);
     Ok(out)
+}
+
+/// VULN-05 FIX: создать санитизированную копию meta.db для экспорта/бэкапа.
+/// Обнуляет pin_hash — он не нужен для unlock (AEAD tag проверяет PIN),
+/// но при экспозиции позволяет офлайн-перебор.
+pub(crate) fn sanitize_meta_for_export(raw: &[u8]) -> Result<Vec<u8>> {
+    use rusqlite::{Connection, OpenFlags};
+
+    let tmp = tempfile::NamedTempFile::new()
+        .map_err(|e| VaultError::System(format!("tempfile: {e}")))?;
+    let tmp_path = tmp.path().to_path_buf();
+    std::fs::write(&tmp_path, raw)?;
+
+    {
+        let conn = Connection::open_with_flags(
+            &tmp_path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| VaultError::System(format!("sanitize open: {e}")))?;
+
+        // Обнуляем pin_hash (safety net для старых vault'ов).
+        conn.execute("UPDATE vault_meta SET pin_hash = '' WHERE id = 1", [])
+            .map_err(|e| VaultError::System(format!("sanitize pin_hash: {e}")))?;
+
+        // VACUUM для компактности и удаления wal/journal с несанитизированными данными.
+        let _ = conn.execute_batch("VACUUM");
+    }
+
+    let sanitized = std::fs::read(&tmp_path)?;
+    // tmp удалится автоматически при drop NamedTempFile
+    Ok(sanitized)
 }
 
 /// Оставить последние KEEP_LAST копий, старые удалить.

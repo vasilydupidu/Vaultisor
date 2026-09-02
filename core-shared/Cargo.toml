@@ -12,6 +12,7 @@ crate-type = ["rlib"]
 aes-gcm = { version = "0.10", features = ["aes", "alloc"] }
 argon2 = { version = "0.5", features = ["std"] }
 sha2 = "0.10"
+hkdf = "0.12"
 hmac = "0.12"
 zeroize = { version = "1.8", features = ["derive"] }
 rand = "0.8"

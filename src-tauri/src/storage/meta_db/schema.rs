@@ -32,6 +32,9 @@ pub struct VaultMetaRow {
     pub fido2_public_key: Option<Vec<u8>>,
     pub enable_health_check: bool,
     pub enable_password_history: bool,
+    /// VULN-06 FIX: per-vault random DPAPI entropy (32 bytes).
+    /// None для старых vault'ов — используется дефолт b"vaultisor:dpapi:v1".
+    pub dpapi_entropy: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -96,7 +99,8 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
                     fido2_public_key BLOB,
                     enable_health_check INTEGER NOT NULL DEFAULT 1,
                     enable_password_history INTEGER NOT NULL DEFAULT 1,
-                    fido2_wrapped_key BLOB
+                    fido2_wrapped_key BLOB,
+                    dpapi_entropy BLOB
                 );
 
                 CREATE TABLE IF NOT EXISTS recovery_local (
@@ -111,7 +115,9 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
                     credential_id BLOB NOT NULL,
                     public_key BLOB,
                     fido2_wrapped_key BLOB NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    aaguid TEXT,
+                    require_pin INTEGER NOT NULL DEFAULT 1
                 );
                 "#,
             )?;
@@ -119,9 +125,9 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
         })();
         match res {
             Ok(()) => {
-                conn.execute_batch("PRAGMA user_version = 9")?;
+                conn.execute_batch("PRAGMA user_version = 11")?;
                 conn.execute_batch("COMMIT")?;
-                current = 9;
+                current = 11;
             }
             Err(e) => {
                 let _ = conn.execute_batch("ROLLBACK");
@@ -347,6 +353,51 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
             Ok(()) => {
                 conn.execute_batch("PRAGMA user_version = 10")?;
                 conn.execute_batch("COMMIT")?;
+                current = 10;
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(e);
+            }
+        }
+    }
+    // v11 миграция: VULN-06 FIX — per-vault DPAPI entropy
+    if current >= 10 && current < 11 {
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        let res: Result<()> = (|| {
+            let cols: Vec<String> = conn
+                .prepare("PRAGMA table_info(vault_meta)")?
+                .query_map([], |r| r.get::<_, String>(1))?
+                .filter_map(|r| r.ok())
+                .collect();
+            if !cols.iter().any(|c| c == "dpapi_entropy") {
+                conn.execute_batch("ALTER TABLE vault_meta ADD COLUMN dpapi_entropy BLOB")?;
+            }
+            // Генерируем 32-byte random entropy для существующего vault'а.
+            let has_vault: bool = conn.query_row(
+                "SELECT COUNT(*) > 0 FROM vault_meta WHERE id = 1", [], |r| r.get(0)
+            ).unwrap_or(false);
+            if has_vault {
+                let existing: Option<Vec<u8>> = conn.query_row(
+                    "SELECT dpapi_entropy FROM vault_meta WHERE id = 1", [],
+                    |r| r.get(0),
+                ).unwrap_or(None);
+                if existing.is_none() {
+                    let mut entropy = [0u8; 32];
+                    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut entropy);
+                    conn.execute(
+                        "UPDATE vault_meta SET dpapi_entropy = ?1 WHERE id = 1",
+                        rusqlite::params![&entropy[..]],
+                    )?;
+                }
+            }
+            Ok(())
+        })();
+        match res {
+            Ok(()) => {
+                conn.execute_batch("PRAGMA user_version = 11")?;
+                conn.execute_batch("COMMIT")?;
+                let _ = current;
             }
             Err(e) => {
                 let _ = conn.execute_batch("ROLLBACK");

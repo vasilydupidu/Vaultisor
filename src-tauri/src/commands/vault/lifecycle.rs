@@ -51,7 +51,7 @@ pub async fn vault_unlock_with_hello(
     let integrity_key_dpapi = db
         .get_integrity_key_dpapi()?
         .ok_or(VaultError::DeviceMismatch)?;
-    let integrity_key = unwrap_integrity_key(&integrity_key_dpapi)?;
+    let integrity_key = unwrap_integrity_key(&integrity_key_dpapi, meta.dpapi_entropy.as_deref())?;
     db.verify_meta_integrity(&*integrity_key)?;
     log::info!("vault_unlock_with_hello: integrity OK");
 
@@ -83,7 +83,7 @@ pub async fn vault_unlock_with_hello(
                 let sig =
                     crate::windows_api::cng_hello::sign(&app, cred_name, TPM_KEK_CHALLENGE)
                         .await?;
-                let m = unwrap_hello_v2(&sig, &ek, &ct, &dk_encrypted, tpm_blob)?;
+                let m = unwrap_hello_v2(&sig, &ek, &ct, &dk_encrypted, tpm_blob, meta.dpapi_entropy.as_deref())?;
                 Ok::<crate::crypto::master::MasterKey, VaultError>(m)
             } else {
                 // Учётные данные Hello всегда создаются как CNG-ключ
@@ -206,31 +206,37 @@ pub async fn vault_unlock_with_fido2(
         return Err(VaultError::BadInput("Физический FIDO2-ключ не привязан".into()));
     }
 
+    let meta = db.vault_load()?.ok_or(VaultError::NotInitialized)?;
     let integrity_key_dpapi = db
         .get_integrity_key_dpapi()?
         .ok_or(VaultError::DeviceMismatch)?;
-    let integrity_key = unwrap_integrity_key(&integrity_key_dpapi)?;
+    let integrity_key = unwrap_integrity_key(&integrity_key_dpapi, meta.dpapi_entropy.as_deref())?;
     db.verify_meta_integrity(&*integrity_key)?;
 
-    let meta = db.vault_load()?.ok_or(VaultError::NotInitialized)?;
     if meta.failed_pin_attempts >= meta.max_pin_attempts {
         return Err(VaultError::TooManyAttempts);
     }
 
     // 1. Собираем список всех зарегистрированных Credential ID
     let all_cred_ids: Vec<Vec<u8>> = key_tuples.iter().map(|(cid, _, _)| cid.clone()).collect();
-    // Определяем require_pin: если хотя бы один ключ — PIN, используем PIN режим.
-    // Если все ключи touch-only, используем touch-only.
-    let any_require_pin = key_tuples.iter().any(|(_, _, rp)| *rp);
+    // Определяем require_pin:
+    // - Все ключи ПИН → REQUIRED (ПИН + Touch)
+    // - Все ключи touch-only → DISCOURAGED (только касание)
+    // - Смешанные → DISCOURAGED — аутентификатор сам запросит ПИН
+    //   для resident (ПИН) ключей по CTAP2 спецификации, а touch-only
+    //   ключи сработают без ПИН.
+    let all_require_pin = key_tuples.iter().all(|(_, _, rp)| *rp);
+    let require_pin_for_assertion = all_require_pin;
 
     // 2. Вызываем окно WebAuthn с передачей всех привязанных ключей
-    let matched_cid = tokio::task::spawn_blocking(move || {
-        crate::auth::fido2::assert_fido2_key_prompt(&all_cred_ids, any_require_pin)
+    let assertion_result = tokio::task::spawn_blocking(move || {
+        crate::auth::fido2::assert_fido2_key_prompt(&all_cred_ids, require_pin_for_assertion)
     })
     .await
     .map_err(|e| VaultError::BadInput(format!("ошибка вызова FIDO2: {e}")))?
     ?;
 
+    let matched_cid = assertion_result.credential_id;
 
     // 3. Находим соответствующий wrapped_key для коснувшегося токена
     let (_, fido2_wrapped_bytes, _) = key_tuples
@@ -238,18 +244,78 @@ pub async fn vault_unlock_with_fido2(
         .find(|(cid, _, _)| cid == &matched_cid)
         .ok_or_else(|| VaultError::BadInput("Ответный FIDO2-ключ не найден в локальном хранилище".into()))?;
 
-    // 4. Распаковываем master_key по KEK конкретного ключа
-    let fido2_kek = crate::crypto::kdf::hkdf_derive(&matched_cid, b"vaultisor:fido2-salt:v1", b"vaultisor:fido2-kek:v1", 32)?;
-    let mut kek_arr = [0u8; 32];
-    kek_arr.copy_from_slice(&fido2_kek);
-
+    // 4. VULN-01 FIX: распаковываем master_key по KEK из PRF-output
     let blob = crate::crypto::aead::EncryptedBlob::from_bytes(&fido2_wrapped_bytes)?;
-    let mut plaintext = crate::crypto::aead::decrypt(&kek_arr, &blob, b"vaultisor:fido2-wrap:v1")
-        .map_err(|_| VaultError::BadInput("Ошибка расшифровки FIDO2 ключа".into()))?;
+
+    let mut used_legacy_v1 = false;
+    let mut plaintext = if let Some(ref prf_output) = assertion_result.prf_output {
+        // PRF-путь (v2): KEK из hardware-bound secret
+        let fido2_kek = crate::crypto::kdf::hkdf_derive(
+            prf_output, b"vaultisor:fido2-prf-kek-salt:v1", b"vaultisor:fido2-prf-kek:v1", 32)?;
+        let mut kek_arr = [0u8; 32];
+        kek_arr.copy_from_slice(&fido2_kek);
+        let result = crate::crypto::aead::decrypt(&kek_arr, &blob, b"vaultisor:fido2-wrap:v2");
+        zeroize::Zeroize::zeroize(&mut kek_arr);
+        match result {
+            Ok(pt) => pt,
+            Err(_) => {
+                // Попытка legacy v1 (credential_id-based KEK) для обратной совместимости.
+                // AUDIT: это небезопасный путь — KEK из публичного значения.
+                log::warn!("FIDO2 unlock: PRF KEK failed, trying legacy credential_id KEK (INSECURE)");
+                let legacy_kek = crate::crypto::kdf::hkdf_derive(
+                    &matched_cid, b"vaultisor:fido2-salt:v1", b"vaultisor:fido2-kek:v1", 32)?;
+                let mut lk = [0u8; 32];
+                lk.copy_from_slice(&legacy_kek);
+                let lr = crate::crypto::aead::decrypt(&lk, &blob, b"vaultisor:fido2-wrap:v1")
+                    .map_err(|_| VaultError::BadInput("Ошибка расшифровки FIDO2 ключа".into()));
+                zeroize::Zeroize::zeroize(&mut lk);
+                used_legacy_v1 = true;
+                lr?
+            }
+        }
+    } else {
+        // Нет PRF-output (старая ОС / старый API) — legacy v1 путь
+        log::warn!("FIDO2 unlock: no PRF output, using legacy credential_id KEK (INSECURE)");
+        let legacy_kek = crate::crypto::kdf::hkdf_derive(
+            &matched_cid, b"vaultisor:fido2-salt:v1", b"vaultisor:fido2-kek:v1", 32)?;
+        let mut lk = [0u8; 32];
+        lk.copy_from_slice(&legacy_kek);
+        let lr = crate::crypto::aead::decrypt(&lk, &blob, b"vaultisor:fido2-wrap:v1")
+            .map_err(|_| VaultError::BadInput("Ошибка расшифровки FIDO2 ключа".into()));
+        zeroize::Zeroize::zeroize(&mut lk);
+        lr?
+    };
 
     if plaintext.len() != 32 {
         zeroize::Zeroize::zeroize(&mut plaintext);
         return Err(VaultError::Crypto("fido2-blob bad length".into()));
+    }
+
+    // 5. VULN-01 AUTO-MIGRATION: если unlock прошёл через legacy v1 и PRF-output
+    //    доступен — автоматически перепривязать ключ на PRF-based KEK (v2).
+    //    Это one-shot миграция: следующий unlock уже пойдёт по v2 пути.
+    if used_legacy_v1 {
+        if let Some(ref prf_output) = assertion_result.prf_output {
+            match (|| -> Result<()> {
+                let new_kek = crate::crypto::kdf::hkdf_derive(
+                    prf_output, b"vaultisor:fido2-prf-kek-salt:v1", b"vaultisor:fido2-prf-kek:v1", 32)?;
+                let mut nk = [0u8; 32];
+                nk.copy_from_slice(&new_kek);
+                let new_blob = crate::crypto::aead::encrypt(&nk, &plaintext, b"vaultisor:fido2-wrap:v2")?;
+                zeroize::Zeroize::zeroize(&mut nk);
+                let new_blob_bytes = new_blob.to_bytes();
+                db.update_fido2_wrapped_key(&matched_cid, &new_blob_bytes)?;
+                log::info!("FIDO2 auto-migration: legacy v1 → PRF v2 complete for credential");
+                Ok(())
+            })() {
+                Ok(()) => {},
+                Err(e) => {
+                    // Миграция не критична — unlock уже состоялся, просто
+                    // следующий раз снова будет legacy. Не блокируем пользователя.
+                    log::error!("FIDO2 auto-migration failed (non-fatal): {e}");
+                }
+            }
+        }
     }
 
     let mut key_buf = [0u8; 32];
@@ -296,14 +362,14 @@ pub async fn vault_change_pin(
     let integrity_key_dpapi = db
         .get_integrity_key_dpapi()?
         .ok_or(VaultError::DeviceMismatch)?;
-    let integrity_key = unwrap_integrity_key(&integrity_key_dpapi)?;
+    let integrity_key = unwrap_integrity_key(&integrity_key_dpapi, meta.dpapi_entropy.as_deref())?;
     db.verify_meta_integrity(&*integrity_key)?;
 
     if meta.failed_pin_attempts >= meta.max_pin_attempts {
         return Err(VaultError::TooManyAttempts);
     }
 
-    let wrapped = unwrap_master_blob(&meta.wrapped_master_dpapi)?;
+    let wrapped = unwrap_master_blob(&meta.wrapped_master_dpapi, meta.dpapi_entropy.as_deref())?;
 
     let master = if meta.crypto_version >= 2 {
         log::info!("vault_change_pin: v2 path — loading Device Secret from TPM");
@@ -345,7 +411,7 @@ pub async fn vault_change_pin(
         wrap_master_with_pin(&master, input.new_pin.as_bytes())?
     };
 
-    let stored = wrap_dpapi_layer(&new_wrapped)?;
+    let stored = wrap_dpapi_layer(&new_wrapped, meta.dpapi_entropy.as_deref())?;
     
     // AUDIT (pentest P0): не храним Argon2id-хэш PIN (оффлайн-оракул перебора).
     let new_pin_hash = String::new();
@@ -365,6 +431,7 @@ pub async fn vault_change_pin(
 pub(crate) fn wrap_hello_v2(
     master: &crate::crypto::master::MasterKey,
     signature: &[u8],
+    dpapi_entropy: Option<&[u8]>,
 ) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)> {
     use crate::crypto::pq_kem;
     use crate::crypto::kdf::hkdf_derive;
@@ -382,7 +449,8 @@ pub(crate) fn wrap_hello_v2(
     //    user+device, а не к RSA-ключу. Поэтому враг, сграбивший ТОЛЬКО файлы
     //    хранилища (модель «harvest-now-decrypt-later»), не получит dk без самой
     //    машины → не декапсулирует → ML-KEM-секрет реально защищает master.
-    let dk_encrypted = crate::windows_api::dpapi::protect(&dk)?;
+    let entropy = crate::storage::db::effective_entropy(dpapi_entropy);
+    let dk_encrypted = crate::windows_api::dpapi::protect_with_entropy(&dk, entropy)?;
     dk.zeroize();
 
     // 4. Encapsulate с публичным ek
@@ -419,6 +487,7 @@ pub(crate) fn unwrap_hello_v2(
     ct: &[u8],
     dk_encrypted_bytes: &[u8],
     tpm_wrapped_bytes: &[u8],
+    dpapi_entropy: Option<&[u8]>,
 ) -> Result<crate::crypto::master::MasterKey> {
     use crate::crypto::pq_kem;
     use crate::crypto::kdf::hkdf_derive;
@@ -428,8 +497,11 @@ pub(crate) fn unwrap_hello_v2(
     // 1. AUDIT H1: dk снимаем DPAPI (независимо от классического TPM-секрета —
     //    см. wrap_hello_v2). На чужой машине/учётке DPAPI не развернёт → Hello
     //    там и не работает (это ожидаемо; кросс-машинно — PIN или Shamir).
+    //    VULN-06 FIX: пробуем per-vault entropy, затем дефолт для обратной совместимости.
+    let entropy = crate::storage::db::effective_entropy(dpapi_entropy);
     let dk: zeroize::Zeroizing<Vec<u8>> =
-        crate::windows_api::dpapi::unprotect(dk_encrypted_bytes)
+        crate::windows_api::dpapi::unprotect_with_entropy(dk_encrypted_bytes, entropy)
+            .or_else(|_| crate::windows_api::dpapi::unprotect_with_entropy(dk_encrypted_bytes, b"vaultisor:dpapi:v1"))
             .map_err(|_| VaultError::DeviceMismatch)?;
 
     // 2. Decapsulate с dk и ct (dk затрётся при drop Zeroizing).
@@ -482,8 +554,8 @@ mod tests {
     fn hello_v2_roundtrip_recovers_master() {
         let master = crate::crypto::master::generate_master_key();
         let signature = b"test-fixed-tpm-signature-0123456789abcdef".to_vec();
-        if let Ok((ek, ct, dk_enc, tpm_wrapped)) = wrap_hello_v2(&master, &signature) {
-            let recovered = unwrap_hello_v2(&signature, &ek, &ct, &dk_enc, &tpm_wrapped).unwrap();
+        if let Ok((ek, ct, dk_enc, tpm_wrapped)) = wrap_hello_v2(&master, &signature, None) {
+            let recovered = unwrap_hello_v2(&signature, &ek, &ct, &dk_enc, &tpm_wrapped, None).unwrap();
             master.with_decrypted(|m| {
                 recovered.with_decrypted(|r| {
                     assert_eq!(m, r, "master после roundtrip должен совпасть");
@@ -496,8 +568,8 @@ mod tests {
     fn hello_v2_wrong_signature_fails() {
         // Неверная TPM-подпись → неверный hybrid_kek → AEAD-тег master не сойдётся.
         let master = crate::crypto::master::generate_master_key();
-        if let Ok((ek, ct, dk_enc, tpm_wrapped)) = wrap_hello_v2(&master, b"correct-signature") {
-            let res = unwrap_hello_v2(b"wrong-signature-xx", &ek, &ct, &dk_enc, &tpm_wrapped);
+        if let Ok((ek, ct, dk_enc, tpm_wrapped)) = wrap_hello_v2(&master, b"correct-signature", None) {
+            let res = unwrap_hello_v2(b"wrong-signature-xx", &ek, &ct, &dk_enc, &tpm_wrapped, None);
             assert!(res.is_err(), "неверная подпись не должна разворачивать master");
         }
     }

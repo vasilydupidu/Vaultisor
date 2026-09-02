@@ -32,6 +32,7 @@ impl MetaDb {
         max_pin_attempts: u32,
         integrity_key_dpapi: &[u8],
         integrity_key: &[u8; 32],
+        dpapi_entropy: Option<&[u8]>,
     ) -> Result<()> {
         self.with_conn(|c| {
             c.execute_batch("BEGIN IMMEDIATE")?;
@@ -42,8 +43,8 @@ impl MetaDb {
                         (id, version, created_at, wrapped_master_key, pin_hash,
                          autolock_seconds, clipboard_clear_seconds,
                          require_auth_for_copy, use_windows_hello, max_pin_attempts,
-                         integrity_key_dpapi, failed_pin_attempts)
-                       VALUES (1, 1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0)"#,
+                         integrity_key_dpapi, failed_pin_attempts, dpapi_entropy)
+                       VALUES (1, 1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10)"#,
                     params![
                         now,
                         wrapped_master_dpapi,
@@ -54,6 +55,7 @@ impl MetaDb {
                         use_windows_hello as i64,
                         max_pin_attempts as i64,
                         integrity_key_dpapi,
+                        dpapi_entropy,
                     ],
                 )?;
                 update_meta_mac(c, integrity_key)?;
@@ -78,7 +80,8 @@ impl MetaDb {
                               pq_encapsulation_key, pq_ciphertext, pq_dk_encrypted,
                               argon2_m_cost, argon2_t_cost, argon2_p_cost,
                               ui_language, fido2_enabled, fido2_credential_id,
-                              fido2_public_key, enable_health_check, enable_password_history
+                              fido2_public_key, enable_health_check, enable_password_history,
+                              dpapi_entropy
                        FROM vault_meta WHERE id = 1"#,
                     [],
                     |row| {
@@ -111,6 +114,7 @@ impl MetaDb {
                             fido2_public_key: row.get(25)?,
                             enable_health_check: row.get::<_, Option<i64>>(26)?.unwrap_or(1) != 0,
                             enable_password_history: row.get::<_, Option<i64>>(27)?.unwrap_or(1) != 0,
+                            dpapi_entropy: row.get(28)?,
                         })
                     },
                 )
@@ -712,6 +716,49 @@ impl MetaDb {
     pub fn disable_fido2_key(&self) -> Result<()> {
         self.delete_all_fido2_keys()
     }
+
+    /// VULN-01 FIX: Обновить fido2_wrapped_key для конкретного credential_id.
+    /// Используется при автоматической миграции legacy v1 (credential_id KEK)
+    /// → v2 (PRF KEK) при разблокировке.
+    pub fn update_fido2_wrapped_key(&self, credential_id: &[u8], new_wrapped: &[u8]) -> Result<()> {
+        self.with_conn(|c| {
+            c.execute_batch("BEGIN IMMEDIATE")?;
+            let res: Result<()> = (|| {
+                c.execute(
+                    "UPDATE fido2_keys SET fido2_wrapped_key = ?1 WHERE credential_id = ?2",
+                    params![new_wrapped, credential_id],
+                )?;
+                // Обновить legacy-колонку vault_meta, если credential_id совпадает
+                c.execute(
+                    "UPDATE vault_meta SET fido2_wrapped_key = ?1 WHERE id = 1 AND fido2_credential_id = ?2",
+                    params![new_wrapped, credential_id],
+                )?;
+                Ok(())
+            })();
+            match res {
+                Ok(()) => {
+                    c.execute_batch("COMMIT")?;
+                    Ok(())
+                }
+                Err(e) => {
+                    let _ = c.execute_batch("ROLLBACK");
+                    Err(e)
+                }
+            }
+        })
+    }
+
+    /// VULN-06 FIX: обновить per-vault DPAPI entropy.
+    /// Используется при recovery (пересоздание на новом устройстве).
+    pub fn set_dpapi_entropy(&self, entropy: &[u8]) -> Result<()> {
+        self.with_conn(|c| {
+            c.execute(
+                "UPDATE vault_meta SET dpapi_entropy = ?1 WHERE id = 1",
+                params![entropy],
+            )?;
+            Ok(())
+        })
+    }
 }
 
 struct MetaForMac {
@@ -858,6 +905,7 @@ mod tests {
             10,
             dpapi_blob,
             &integrity_key,
+            Some(b"test-dpapi-entropy-32-bytes-0123"),
         )
         .unwrap();
 

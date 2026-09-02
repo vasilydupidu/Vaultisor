@@ -51,8 +51,9 @@ pub fn vault_export(input: ExportInput, state: State<'_, AppState>) -> Result<()
         return Err(VaultError::NotInitialized);
     }
     let target = validate_user_path(&input.target_path)?;
-    // См. импорт: поддержка VLT2 формата
-    let meta_bytes = std::fs::read(&meta_src)?;
+    // VULN-05 FIX: санитизируем meta.db перед экспортом (обнуляем pin_hash).
+    let meta_raw = std::fs::read(&meta_src)?;
+    let meta_bytes = crate::commands::backup::sanitize_meta_for_export(&meta_raw)?;
     let records_bytes = std::fs::read(&records_src)?;
     let web_bytes = std::fs::read(&web_src)?;
     let mut out = Vec::with_capacity(12 + meta_bytes.len() + records_bytes.len() + web_bytes.len() + 12);

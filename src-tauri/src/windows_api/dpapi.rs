@@ -47,11 +47,16 @@ pub fn is_available() -> bool {
     }
 }
 
-/// Защитить blob с привязкой к user+device (CurrentUser scope).
+/// Защитить blob с привязкой к user+device (CurrentUser scope) с дефолтной entropy.
 pub fn protect(plaintext: &[u8]) -> Result<Vec<u8>> {
+    protect_with_entropy(plaintext, ENTROPY)
+}
+
+/// Защитить blob с привязкой к user+device (CurrentUser scope) и заданной entropy.
+pub fn protect_with_entropy(plaintext: &[u8], entropy_bytes: &[u8]) -> Result<Vec<u8>> {
     // SAFETY:
     // - Pointers in CRYPT_INTEGER_BLOB input point to valid slice memory for the duration of the FFI call.
-    // - ENTROPY pointer also points to valid static memory.
+    // - entropy pointer points to valid slice memory.
     // - output.pbData is allocated by the OS and we correctly free it using LocalFree after use.
     unsafe {
         let mut input = CRYPT_INTEGER_BLOB {
@@ -59,8 +64,8 @@ pub fn protect(plaintext: &[u8]) -> Result<Vec<u8>> {
             pbData: plaintext.as_ptr() as *mut u8,
         };
         let mut entropy = CRYPT_INTEGER_BLOB {
-            cbData: ENTROPY.len() as u32,
-            pbData: ENTROPY.as_ptr() as *mut u8,
+            cbData: entropy_bytes.len() as u32,
+            pbData: entropy_bytes.as_ptr() as *mut u8,
         };
         let mut output = CRYPT_INTEGER_BLOB::default();
 
@@ -89,11 +94,16 @@ pub fn protect(plaintext: &[u8]) -> Result<Vec<u8>> {
     }
 }
 
-/// Снять защиту (только в той же учётной записи на том же устройстве).
+/// Снять защиту (только в той же учётной записи на том же устройстве) с дефолтной entropy.
 pub fn unprotect(blob: &[u8]) -> Result<zeroize::Zeroizing<Vec<u8>>> {
+    unprotect_with_entropy(blob, ENTROPY)
+}
+
+/// Снять защиту с заданной entropy.
+pub fn unprotect_with_entropy(blob: &[u8], entropy_bytes: &[u8]) -> Result<zeroize::Zeroizing<Vec<u8>>> {
     // SAFETY:
     // - Pointers in CRYPT_INTEGER_BLOB input point to valid slice memory for the duration of the FFI call.
-    // - ENTROPY pointer also points to valid static memory.
+    // - entropy pointer points to valid slice memory.
     // - output.pbData and description are allocated by the OS and we free them with LocalFree.
     // - Plaintext is safely zeroized before freeing.
     unsafe {
@@ -102,8 +112,8 @@ pub fn unprotect(blob: &[u8]) -> Result<zeroize::Zeroizing<Vec<u8>>> {
             pbData: blob.as_ptr() as *mut u8,
         };
         let mut entropy = CRYPT_INTEGER_BLOB {
-            cbData: ENTROPY.len() as u32,
-            pbData: ENTROPY.as_ptr() as *mut u8,
+            cbData: entropy_bytes.len() as u32,
+            pbData: entropy_bytes.as_ptr() as *mut u8,
         };
         let mut output = CRYPT_INTEGER_BLOB::default();
         let mut description: PWSTR = PWSTR::null();
@@ -146,6 +156,22 @@ mod tests {
             assert_ne!(blob.as_slice(), secret); // действительно зашифровано
             let restored = unprotect(&blob).expect("unprotect must succeed when protect succeeded");
             assert_eq!(restored.as_slice(), secret);
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn dpapi_custom_entropy_roundtrip() {
+        let secret = b"vaultisor-dpapi-custom-entropy-secret";
+        let entropy = b"custom:entropy:test:123";
+        if let Ok(blob) = protect_with_entropy(secret, entropy) {
+            assert_ne!(blob.as_slice(), secret);
+            let restored = unprotect_with_entropy(&blob, entropy).expect("unprotect_with_entropy must succeed");
+            assert_eq!(restored.as_slice(), secret);
+
+            // Wrong entropy must fail to unprotect
+            let wrong_entropy = b"wrong:entropy:456";
+            assert!(unprotect_with_entropy(&blob, wrong_entropy).is_err());
         }
     }
 }
