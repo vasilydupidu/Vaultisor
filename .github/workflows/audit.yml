@@ -1,0 +1,54 @@
+name: Supply-chain audit
+
+# SCA-проверки зависимостей (RUSTSEC + npm) на каждый push/PR и еженедельно.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # каждый понедельник 06:00 UTC
+
+permissions: {}
+
+concurrency:
+  group: audit-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  cargo-deny:
+    name: cargo-deny (advisories, licenses, sources)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Граф зафиксирован на x86_64-pc-windows-msvc в deny.toml, поэтому
+      # проверка на Linux-раннере всё равно смотрит ровно то, что уезжает
+      # в релизный бинарь.
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          command: check advisories licenses sources
+
+  npm-audit:
+    name: npm audit (all dependencies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: npm ci --no-fund --ignore-scripts
+      # Продукт офлайновый, но цепочка сборки — нет: moderate в devDependencies
+      # это по-прежнему код, который исполняется на машине разработчика.
+      - run: npm audit --audit-level=moderate

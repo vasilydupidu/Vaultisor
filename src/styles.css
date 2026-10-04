@@ -1,0 +1,243 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+ * Vaultisor — global styles
+ * Палитра и типографика согласованы с бренд-буком MFASOFT 2022.
+ * ============================================================================
+ */
+
+/* Roboto и Noto Serif подключаем как локальные fallback'и через систему.
+   В офлайн-режиме мы НЕ ходим в Google Fonts — это решение по безопасности.
+   Если шрифт не установлен в системе — браузер использует Arial / Sans-Serif. */
+
+:root {
+  color-scheme: dark;
+
+  /* Брендовые токены — резерв для inline-styles. */
+  --brand-500: #0ca49f;
+  --brand-600: #0a8a86;
+
+  --ink-950: #0f0f0f;
+  --ink-900: #191919;
+  --ink-800: #262626;
+  --ink-700: #333333;
+  --ink-600: #4d4d4d;
+  --ink-400: #808080;
+
+  --accent-400: #ff9e63;
+
+  --radius-card: 14px;
+  --radius-pill: 999px;
+}
+
+/* Базовый сброс */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  background:
+    radial-gradient(1200px 600px at 50% -20%, rgba(12, 164, 159, 0.08) 0%, transparent 50%),
+    linear-gradient(180deg, #0c0c0c 0%, #161616 100%);
+  background-attachment: fixed;
+  color: #ffffff;
+  overscroll-behavior: none;
+  user-select: none; /* desktop-app feel */
+}
+
+/* Разрешаем выделение и ввод в ключевых элементах.
+   WebView2: при user-select:none на body каретка/ввод в input может ломаться,
+   если не сброшен И префиксный -webkit-user-select. Ставим оба явно. */
+input,
+textarea,
+[data-allow-select] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Скроллбары — тонкие, в стиле приложения */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Focus ring унифицированный */
+:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Отключаем стандартные стили автокомплита Chrome (жёлтый фон) */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Утилитарный класс: запрещает перетаскивание любого drag-friendly */
+.no-drag {
+  -webkit-user-drag: none;
+}
+
+/* Разрешаем перетаскивание элементов при включенном user-select: none в Chromium/WebView2 */
+[draggable="true"],
+[draggable],
+.card-flat[draggable="true"],
+.card-flat[draggable] {
+  -webkit-user-drag: element !important;
+  user-select: auto !important;
+  -webkit-user-select: auto !important;
+}
+
+/* Класс для невидимого подключения шрифтов в HUD-режиме */
+.font-display-headline {
+  font-family: "Noto Serif", Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+/* Текстовая утилита: неразрывная подсветка для ключевых акцентов */
+.brand-underline {
+  background-image: linear-gradient(180deg, transparent 65%, rgba(12, 164, 159, 0.35) 65%);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/* Плавный transition по умолчанию у интерактивов */
+.transition-app {
+  transition-property: background-color, border-color, color, box-shadow, transform, opacity;
+  transition-duration: 180ms;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Контейнер мобильного окна. Vaultisor — desktop, но визуально mobile-feeling. */
+.app-shell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Декоративный фоновой паттерн — тонкая сетка из дотов в брендовом цвете */
+.bg-dots {
+  background-image: radial-gradient(rgba(12, 164, 159, 0.07) 1px, transparent 1px);
+  background-size: 18px 18px;
+  background-position: 0 0;
+}
+
+/* Утилитарные skin-карточек */
+.card-elevated {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-card);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 4px 16px -4px rgba(0, 0, 0, 0.4);
+}
+
+.card-flat {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-card);
+}
+
+/* Кнопка-первичная (используется как fallback когда нет компонента <Button>) */
+.btn-primary {
+  background: var(--brand-500);
+  color: #ffffff;
+  font-weight: 500;
+  border-radius: 12px;
+  padding: 10px 16px;
+  transition: background 180ms ease;
+}
+.btn-primary:hover {
+  background: var(--brand-600);
+}
+
+/* Поведение при показе/скрытии содержимого с blur */
+.blur-secret {
+  filter: blur(4px);
+  transition: filter 200ms ease;
+  letter-spacing: 0.02em;
+}
+.blur-secret-revealed {
+  filter: blur(0);
+}
+
+/* Декоративный титул раздела */
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+/* Убираем стандартные spin-кнопки у <input type="number"> */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Отключаем нативную кнопку «глазик» Edge/WebView2 (::-ms-reveal) и очистки (::-ms-clear),
+   чтобы не было дублирования с нашим единым кастомным глазиком */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+}
+
+/* ── Language toggle pill ── */
+.lang-toggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 50;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.6;
+}
+.lang-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.25);
+}

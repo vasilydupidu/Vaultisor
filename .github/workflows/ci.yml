@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  workflow_call:
+    inputs:
+      cache:
+        description: Кэш сборки Rust. Релиз вызывает CI без кэша.
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+  pull_request:
+
+# Токен по умолчанию ничего не может: каждый job получает только своё.
+permissions: {}
+
+# Новый push в ту же ветку PR отменяет устаревшую проверку; main и вызов из
+# релиза не отменяются.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  frontend:
+    name: Frontend (typecheck, tests, production build)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: npm ci --no-fund
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  backend:
+    name: Backend (fmt, clippy, tests, audit, release build)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain from rust-toolchain.toml
+        run: |
+          rustup toolchain install
+          rustc --version
+      - name: Install NASM
+        uses: ilammy/setup-nasm@72793074d3c8cdda771dba85f6deafe00623038b # v1
+      - name: Ensure Perl in PATH
+        shell: bash
+        run: |
+          echo "C:/Strawberry/perl/bin" >> "$GITHUB_PATH"
+          echo "C:/Strawberry/c/bin" >> "$GITHUB_PATH"
+      - name: Rust cache
+        # Кэш общий для веток и потому не используется при релизе: иначе
+        # отравленный в другой ветке кэш попал бы в публикуемый бинарник.
+        if: ${{ inputs.cache != false }}
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: npm ci --no-fund
+      - run: npm run build
+      - name: Cargo fmt
+        run: cargo fmt --all -- --check
+      - name: Cargo clippy (warnings are errors)
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Cargo test workspace
+        # Argon2 and the vault crypto tests are intentionally memory-heavy.
+        # Keep CI deterministic on runners with different core counts.
+        run: cargo test --workspace --all-features --locked -- --test-threads=2
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@3f74d7c16a4242f1c95561e98edc25d36adb4375 # v2.87.12
+        with:
+          tool: cargo-audit
+      - name: Cargo audit
+        run: cargo audit
+      - name: Windows production backend
+        run: cargo build --release --locked -p vaultisor

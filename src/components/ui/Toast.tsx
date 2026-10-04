@@ -1,0 +1,124 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { useTranslation } from "react-i18next";
+import { Check, CircleAlert, Info, X } from "lucide-react";
+import { cn } from "@/lib/cn";
+
+interface ToastItem {
+  id: string;
+  kind: "success" | "error" | "info";
+  message: string;
+  duration: number;
+}
+
+interface ToastApi {
+  show: (kind: ToastItem["kind"], message: string, duration?: number) => void;
+  success: (m: string, d?: number) => void;
+  error: (m: string, d?: number) => void;
+  info: (m: string, d?: number) => void;
+}
+
+const Ctx = createContext<ToastApi | null>(null);
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [items, setItems] = useState<ToastItem[]>([]);
+
+  const remove = useCallback((id: string) => {
+    setItems((cur) => cur.filter((t) => t.id !== id));
+  }, []);
+
+  const show = useCallback(
+    (kind: ToastItem["kind"], message: string, duration?: number) => {
+      const id = Math.random().toString(36).slice(2);
+      // Ошибки висят дольше — пользователь должен успеть прочитать.
+      const dur = duration ?? (kind === "error" ? 6000 : 3200);
+      setItems((cur) => [...cur, { id, kind, message, duration: dur }]);
+    },
+    [],
+  );
+
+  // AUDIT 3.1.1 (HIGH): раньше объект api создавался заново на каждый рендер
+  // провайдера. Любой показ тоста менял идентичность контекста, из-за чего у
+  // потребителей пересоздавались useCallback-зависимости: RecordEdit заново
+  // загружал запись и стирал несохранённый черновик (в т.ч. сразу после
+  // toast.error о неудачном сохранении), а RecordView повторно раскрывал поля.
+  const api = useMemo<ToastApi>(
+    () => ({
+      show,
+      success: (m, d) => show("success", m, d),
+      error: (m, d) => show("error", m, d),
+      info: (m, d) => show("info", m, d),
+    }),
+    [show],
+  );
+
+  return (
+    <Ctx.Provider value={api}>
+      {children}
+      {/* Toast-стак рендерится сверху по центру, поверх любых sheets/modal'ов
+          через высокий z-index. Это гарантирует видимость над окнами Hello-prompt
+          и системными подсказками, которые перекрывают нижнюю часть экрана. */}
+      <div className="fixed top-2 left-1/2 z-[1000] -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none max-w-[360px] w-full px-2">
+        {items.map((t) => (
+          <ToastView key={t.id} item={t} onClose={remove} />
+        ))}
+      </div>
+    </Ctx.Provider>
+  );
+}
+
+function ToastView({
+  item,
+  onClose,
+}: {
+  item: ToastItem;
+  onClose: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  // Зависимость по id, а не по идентичности замыкания: иначе таймер каждого
+  // тоста перезапускался при появлении любого другого тоста.
+  useEffect(() => {
+    const id = setTimeout(() => onClose(item.id), item.duration);
+    return () => clearTimeout(id);
+  }, [item.duration, item.id, onClose]);
+
+  const Icon =
+    item.kind === "success" ? Check : item.kind === "error" ? CircleAlert : Info;
+  const color =
+    item.kind === "success"
+      ? "text-success"
+      : item.kind === "error"
+      ? "text-danger"
+      : "text-brand-400";
+
+  return (
+    <div
+      className={cn(
+        "card-elevated pointer-events-auto px-3 py-2 max-w-[340px] w-full flex items-start gap-2 animate-fade-in-up border border-white/10 bg-black/90 backdrop-blur-md rounded-xl shadow-xl min-h-9",
+      )}
+    >
+      <Icon className={cn("h-4 w-4 shrink-0 mt-0.5", color)} />
+      <div className="text-xs font-medium text-white/90 flex-1 leading-snug break-words">{item.message}</div>
+      <button
+        onClick={() => onClose(item.id)}
+        aria-label={t('common.close')}
+        className="text-white/40 hover:text-white/80 transition-app shrink-0 ml-0.5 mt-0.5"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+export function useToast(): ToastApi {
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error("useToast: <ToastProvider> not mounted");
+  return ctx;
+}
