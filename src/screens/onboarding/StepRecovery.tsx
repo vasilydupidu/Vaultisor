@@ -62,7 +62,7 @@ export function StepRecovery({ createdShares, onCreate, onComplete }: Props) {
       setGeneration(createdShares.generation);
       return;
     }
-    // AUDIT 3.1.1: в StrictMode эффект монтируется дважды, и хранилище
+    // В StrictMode эффект монтируется дважды, и хранилище
     // создавалось двумя вызовами подряд (второй падал на «уже создано» и
     // показывал экран ошибки поверх успешно созданного хранилища).
     if (startedRef.current) return;
@@ -296,7 +296,7 @@ export function StepRecovery({ createdShares, onCreate, onComplete }: Props) {
             fullWidth
             size="sm"
             onClick={async () => {
-              // AUDIT 3.1.1: пропуск оставлял локальную часть A на диске, а
+              // Пропуск оставлял локальную часть A на диске, а
               // части B и C — нигде. Настройки показывали «восстановление
               // настроено», хотя собрать кворум 2-из-3 было невозможно.
               // Отзываем поколение, чтобы статус соответствовал реальности.

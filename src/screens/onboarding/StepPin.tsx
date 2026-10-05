@@ -19,7 +19,7 @@ const PASS_MIN = 15;
 
 export function StepPin({ value, onChange, onNext, tpmAvailable }: Props) {
   const { t } = useTranslation();
-  // M-03: короткий цифровой PIN допустим ТОЛЬКО при аппаратном TPM (совпадает с
+  // Короткий цифровой PIN допустим ТОЛЬКО при аппаратном TPM (совпадает с
   // backend vault_create: без TPM Device Secret нельзя защитить PIN от офлайн-
   // перебора, поэтому backend требует мастер-пароль ≥15 символов). DPAPI сам по
   // себе — это ACL уровня ОС, а не крипто-якорь, поэтому короткий PIN он не
@@ -30,7 +30,7 @@ export function StepPin({ value, onChange, onNext, tpmAvailable }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
   const [showPass, setShowPass] = useState(false);
-  // L-05: усиленный режим — PIN с буквами и цифрами (для тех, кому нужна
+  // Усиленный режим — PIN с буквами и цифрами (для тех, кому нужна
   // повышенная стойкость). Доступен на TPM-устройствах вместо цифрового PIN.
   const [alnum, setAlnum] = useState(false);
   const alnumInputRef = useRef<HTMLInputElement>(null);
@@ -223,7 +223,7 @@ export function StepPin({ value, onChange, onNext, tpmAvailable }: Props) {
                 type={showPass ? "text" : "password"}
                 value={stage === "create" ? value : confirm}
                 onChange={(e) => {
-                  // L-05: буквы (любой раскладки, вкл. кириллицу) и цифры;
+                  // Буквы (любой раскладки, вкл. кириллицу) и цифры;
                   // символы/пробелы отсекаем.
                   const v = e.target.value.replace(/[^\p{L}\p{N}]/gu, "");
                   if (stage === "create") onChange(v);

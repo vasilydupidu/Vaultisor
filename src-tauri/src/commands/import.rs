@@ -48,7 +48,7 @@ pub(crate) struct ChromiumEntry {
 
 /// Разобрать CSV-экспорт Chromium.
 ///
-/// AUDIT 3.1.1: раньше файл резался по `lines()`, поэтому запись с переводом
+/// Раньше файл резался по `lines()`, поэтому запись с переводом
 /// строки внутри кавычек (Chrome так экспортирует многострочные заметки)
 /// разваливалась на несколько «строк», и импорт молча портил данные или терял
 /// пароли. Теперь весь файл разбирается одним проходом с учётом кавычек.
@@ -198,7 +198,7 @@ fn extract_clean_domain(raw_name: &str, url: &str) -> String {
         return lower;
     }
 
-    // AUDIT 3.1.1: для доменов вида bbc.co.uk два последних компонента дают
+    // Для доменов вида bbc.co.uk два последних компонента дают
     // публичный суффикс, а не имя сайта. Берём на один уровень выше.
     let last_two = format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]);
     if MULTI_LEVEL_SUFFIXES.contains(&last_two.as_str()) {
@@ -255,7 +255,7 @@ pub async fn import_chromium_csv(
     }
     let canonical_path = std::fs::canonicalize(requested_path)?;
 
-    // AUDIT 3.1.1: CSV целиком состоит из паролей в открытом виде. Держим его
+    // CSV целиком состоит из паролей в открытом виде. Держим его
     // в Zeroizing, чтобы буфер был затёрт при выходе из команды, а не остался
     // в куче процесса до следующего аллокатора.
     let mut file = File::open(&canonical_path)?;
@@ -512,7 +512,7 @@ mod tests {
         (dir, db, master)
     }
 
-    /// M-07: адрес входа длиннее 256 символов раньше молча отвергал строку, а
+    /// Адрес входа длиннее 256 символов раньше молча отвергал строку, а
     /// интерфейс сразу предлагал затереть исходник. Теперь строка переносится,
     /// полный адрес сохраняется в поле, а в метаданные идёт хост.
     #[test]
@@ -572,7 +572,7 @@ mod tests {
         assert_eq!(entries[1].name, "github.com");
     }
 
-    /// AUDIT 3.1.1: Chrome экспортирует многострочные заметки в кавычках.
+    /// Chrome экспортирует многострочные заметки в кавычках.
     /// Построчный разбор ломал такие записи и терял пароли следующих строк.
     #[test]
     fn multiline_quoted_fields_do_not_break_rows() {
@@ -657,7 +657,7 @@ Site,site.example/login,u,P4ssw0rd
         assert_eq!(entries[0].url, "https://site.example/login");
     }
 
-    /// AUDIT 3.1.1: bbc.co.uk раньше сокращался до бесполезного «co.uk».
+    /// `bbc.co.uk` раньше сокращался до бесполезного «co.uk».
     #[test]
     fn multi_level_public_suffixes_keep_the_site_name() {
         assert_eq!(
@@ -681,7 +681,7 @@ Site,site.example/login,u,P4ssw0rd
         assert_eq!(extract_clean_domain("", ""), "Импортированный сайт");
     }
 
-    /// AUDIT 3.1.1: удаление исходного CSV принимает только расписку сервера и
+    /// Удаление исходного CSV принимает только расписку сервера и
     /// отказывается работать, если файл изменился после импорта.
     #[test]
     fn secure_delete_requires_an_unchanged_file() {

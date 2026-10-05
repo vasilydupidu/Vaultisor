@@ -34,7 +34,7 @@ describe("validatePinLocal digit", () => {
   });
 });
 
-describe("validatePinLocal alnum (L-05)", () => {
+describe("validatePinLocal alnum", () => {
   it("принимает буквенно-цифровой ≥11 (латиница и кириллица)", () => {
     expect(validatePinLocal("abcd1234567", "alnum")).toBeNull();
     expect(validatePinLocal("Str0ngPass99", "alnum")).toBeNull();

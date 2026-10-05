@@ -1,7 +1,7 @@
 import { useState, type PointerEvent as ReactPointerEvent } from "react";
 
 /**
- * R-01/R-02: pointer-based drag-and-drop, вынесенный из VaultScreen в хук.
+ * Pointer-based drag-and-drop, вынесенный из VaultScreen в хук.
  * Два действия: перетаскивание карточки на карточку (reorder — только в
  * неотфильтрованном виде, canReorder) и на вкладку категории (смена категории).
  * Простой клик (без движения) — открытие записи.

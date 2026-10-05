@@ -30,7 +30,7 @@ pub fn generate_master_key() -> MasterKey {
     let mut k = [0u8; MASTER_KEY_LEN];
     rng::fill(&mut k);
     let mk = MasterKey::new(k);
-    // AUDIT M4: `[u8; N]` — Copy, поэтому MasterKey::new получает КОПИЮ, а
+    // `[u8; N]` — Copy, поэтому MasterKey::new получает КОПИЮ, а
     // локальный `k` остаётся на стеке. Затираем его явно.
     k.zeroize();
     mk
@@ -101,7 +101,7 @@ pub fn unwrap_master_with_pin_params(
     key_buf.copy_from_slice(&plaintext);
     plaintext.zeroize();
     let mk = MasterKey::new(key_buf);
-    key_buf.zeroize(); // AUDIT M4: затираем стековую копию
+    key_buf.zeroize(); // затираем стековую копию
     Ok(mk)
 }
 
@@ -140,7 +140,7 @@ pub fn unwrap_master_with_pin_v2_params(
     key_buf.copy_from_slice(&plaintext);
     plaintext.zeroize();
     let mk = MasterKey::new(key_buf);
-    key_buf.zeroize(); // AUDIT M4: затираем стековую копию
+    key_buf.zeroize(); // затираем стековую копию
     Ok(mk)
 }
 
@@ -221,7 +221,7 @@ mod tests {
         assert!(matches!(err, crate::error::VaultError::InvalidPin));
     }
 
-    /// AUDIT 3.1.1: ключ, запечатанный под сохранёнными параметрами, обязан
+    /// Ключ, запечатанный под сохранёнными параметрами, обязан
     /// открываться именно ими, а не константами текущей сборки.
     #[test]
     fn unwrap_uses_the_params_the_key_was_sealed_with() {

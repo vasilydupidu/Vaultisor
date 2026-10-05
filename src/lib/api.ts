@@ -7,7 +7,7 @@ export function registerOnLockCallback(cb: (() => void) | null) {
 }
 
 /**
- * AUDIT 3.1.1: состояние «сессия заблокирована» определяется по машинному коду
+ * Состояние «сессия заблокирована» определяется по машинному коду
  * LOCKED, а не по подстроке русского сообщения — иначе любая правка текста
  * ошибки тихо ломала авто-возврат на экран блокировки.
  */
@@ -239,7 +239,7 @@ export const apiRecordList = (dbType: "records" | "web", opts?: RecordListOpts) 
       db_type: dbType,
     },
   });
-/** R-03: сохранить пользовательский порядок записей (в зашифрованном vault). */
+/** Сохранить пользовательский порядок записей (в зашифрованном vault). */
 export const apiRecordReorder = (dbType: "records" | "web", orderedIds: string[]) =>
   invoke<void>("record_reorder", { input: { ordered_ids: orderedIds, db_type: dbType } });
 export const apiRecordGet = (dbType: "records" | "web", id: string) =>
@@ -273,7 +273,7 @@ export const apiClipboardCopy = (
   });
 /** Ручная очистка буфера обмена из настроек. */
 export const apiClipboardClear = () => invoke<void>("clipboard_clear");
-/** AUDIT M9: копирование Shamir-доли с авто-очисткой буфера (по умолчанию 30с). */
+/** Копирование Shamir-доли с авто-очисткой буфера (по умолчанию 30с). */
 export const apiClipboardCopyText = (text: string, clearAfterSeconds = 30) =>
   invoke<void>("clipboard_copy_text", {
     input: { text, clear_after_seconds: clearAfterSeconds },
@@ -381,7 +381,7 @@ export const apiSecureDeleteFile = (deletionToken: string) =>
 
 // === История изменений паролей ===
 /**
- * AUDIT 3.1.1: запись истории больше НЕ содержит открытого пароля. Значение
+ * Запись истории больше НЕ содержит открытого пароля. Значение
  * не покидает backend; копирование и восстановление выполняются отдельными
  * командами по идентификатору записи истории.
  */
@@ -450,7 +450,7 @@ export interface Fido2Status {
 
 export const apiGetFido2Status = () => invoke<Fido2Status>("get_fido2_status");
 /**
- * AUDIT 3.1.1 (HIGH): аргументы команд Tauri сериализуются в camelCase, если у
+ * Аргументы команд Tauri сериализуются в camelCase, если у
  * команды не задан rename_all. Раньше здесь отправлялся `require_pin`, поэтому
  * backend его не видел и всегда применял `unwrap_or(true)` — режим Touch-only
  * молча не работал.

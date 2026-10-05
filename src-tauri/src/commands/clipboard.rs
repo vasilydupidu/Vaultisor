@@ -27,14 +27,14 @@ pub async fn clipboard_copy_secret(
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<()> {
-    // AUDIT M5: авто-блокировка по простою проверяется и здесь, а не только в
+    // Авто-блокировка по простою проверяется и здесь, а не только в
     // record-CRUD — иначе простаивающая сессия могла бы копировать секрет.
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
     state.touch();
 
-    // N-03 (вариант B): единый гейт «копирование/просмотр» с окном доверия 60с.
+    // Единый гейт «копирование/просмотр» с окном доверия 60с.
     // Проверку делаем до захвата мьютекса сессии — Hello async и показывает prompt.
     crate::commands::auth_gate::require_copy_view_auth(&state).await?;
 
@@ -75,7 +75,7 @@ pub struct ClipboardCopyTextInput {
     pub clear_after_seconds: u32,
 }
 
-/// AUDIT M9: скопировать произвольный текст (Shamir-доля восстановления) с
+/// Скопировать произвольный текст (Shamir-доля восстановления) с
 /// авто-очисткой и исключением из истории буфера (Win+V) — как для секретов.
 /// Раньше доля копировалась напрямую navigator.clipboard без очистки и висела
 /// в буфере бесконечно (доля C + любая вторая = master-key).

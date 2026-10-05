@@ -52,7 +52,7 @@ describe("formatDateTime", () => {
     mocked.language = "ru";
   });
 
-  /** AUDIT 3.1.1: раньше дата всегда выводилась в ru-RU. */
+  /** Раньше дата всегда выводилась в ru-RU. */
   it("следует активному языку интерфейса", () => {
     const iso = "2026-03-04T15:06:07.000Z";
     mocked.language = "ru";

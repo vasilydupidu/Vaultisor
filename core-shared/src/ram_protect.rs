@@ -15,7 +15,7 @@ use windows::Win32::Security::Cryptography::{
 #[derive(Clone)]
 pub struct EncryptedMemoryBuffer<const N: usize> {
     data: [u8; N],
-    /// L-07: удалось ли реально зашифровать буфер через CryptProtectMemory.
+    /// Удалось ли реально зашифровать буфер через CryptProtectMemory.
     /// Если нет (API вернул ошибку / не-Windows) — `data` хранит plaintext, и
     /// расшифровывать его в with_decrypted НЕЛЬЗЯ (иначе CryptUnprotectMemory
     /// испортит открытые байты). Флаг синхронизирует protect/unprotect.

@@ -66,7 +66,7 @@ pub async fn recovery_prepare_save(
     // This dialog runs in the backend process.  No arbitrary path from the
     // webview is accepted by any recovery write command.
     //
-    // AUDIT 3.1.1: blocking_save_file ждёт действия пользователя. Вызов прямо
+    // `blocking_save_file` ждёт действия пользователя. Вызов прямо
     // в async-команде занимал поток исполнителя tokio на всё время показа
     // диалога; выносим в blocking-пул, как это уже сделано в file_prepare.
     let dialog_app = app.clone();
@@ -169,7 +169,7 @@ fn validate_user_path(p: &str) -> Result<&std::path::Path> {
             ));
         }
     }
-    // AUDIT M8: отклоняем ЛЮБЫЕ UNC/сетевые/device-пути.
+    // Отклоняем ЛЮБЫЕ UNC/сетевые/device-пути.
     if p.starts_with(r"\\") {
         return Err(VaultError::BadInput(
             "Сетевые и UNC-пути не поддерживаются".into(),

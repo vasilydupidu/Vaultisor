@@ -1,12 +1,12 @@
 // FIDO2 / WebAuthn native Windows integration.
 // Использует системную библиотеку `webauthn.dll` (Windows 10 1903+ / Windows 11).
 //
-// AUDIT VULN-01 FIX: KEK теперь выводится из PRF-output (hmac-secret) — аппаратно-
+// KEK теперь выводится из PRF-output (hmac-secret) — аппаратно-
 // привязанного секрета аутентификатора, а НЕ из публичного credential_id.
 // Для работы PRF требуется API v6+ (Windows 11 21H2+) и поддержка hmac-secret
 // в аутентификаторе (Рутокен MFA, YubiKey 5 — поддерживают).
 //
-// AUDIT: все FFI-структуры точно соответствуют определениям из Windows SDK
+// Все FFI-структуры точно соответствуют определениям из Windows SDK
 // webauthn.h (10.0.26100.0). Любые изменения должны сверяться с заголовком.
 
 use zeroize::Zeroizing;
@@ -94,7 +94,7 @@ pub fn is_fido2_supported() -> bool {
 ///   - `true`  → ПИН + Touch (resident key, CTAP2, UserVerification = REQUIRED)
 ///   - `false` → Touch-only (non-resident, CTAP2, ПИН токена не требуется)
 ///
-/// VULN-01 FIX: если API >= 6, устанавливает bEnablePrf = TRUE для hmac-secret.
+/// Если API >= 6, устанавливает bEnablePrf = TRUE для hmac-secret.
 #[cfg(target_os = "windows")]
 pub fn register_fido2_key_prompt(
     key_name: &str,
@@ -181,7 +181,7 @@ pub fn register_fido2_key_prompt(
         let hwnd = windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0;
         let mut p_attestation: *mut WEBAUTHN_CREDENTIAL_ATTESTATION_V5 = ptr::null_mut();
 
-        // VULN-01 FIX: V6 options с bEnablePrf = TRUE
+        // V6 options с bEnablePrf = TRUE
         let hr = if api_version >= 6 {
             let options_v6 = WEBAUTHN_AUTHENTICATOR_MAKE_CREDENTIAL_OPTIONS_V6 {
                 dwVersion: 6,
@@ -209,7 +209,7 @@ pub fn register_fido2_key_prompt(
                 dwLargeBlobSupport: 0,
                 bPreferResidentKey: if require_pin { 1 } else { 0 },
                 bBrowserInPrivateMode: 0,
-                bEnablePrf: 1, // VULN-01 FIX
+                bEnablePrf: 1,
             };
 
             WebAuthNAuthenticatorMakeCredential(
@@ -258,7 +258,7 @@ pub fn register_fido2_key_prompt(
         if hr != 0 || p_attestation.is_null() {
             let hr_u = hr as u32;
             let err_msg = match hr_u {
-                // AUDIT 3.1.1: 0x80090030 — NTE_DEVICE_NOT_READY, это НЕ отмена
+                // 0x80090030 — NTE_DEVICE_NOT_READY, это НЕ отмена
                 // пользователем; раньше сообщение вводило в заблуждение.
                 0x800704C7 => "Привязка FIDO2-ключа отменена пользователем".to_string(),
                 0x80090030 => "FIDO2-ключ не готов: подключите токен и повторите".to_string(),
@@ -325,7 +325,7 @@ pub fn register_fido2_key_prompt(
                 .to_vec();
             }
 
-            // VULN-01 FIX: bPrfEnabled из V5 ответа
+            // `bPrfEnabled` из ответа V5
             if att.dwVersion >= 5 {
                 prf_supported = att.bPrfEnabled != 0;
                 log::info!(
@@ -369,7 +369,7 @@ pub fn register_fido2_key_prompt(
 
 /// Аутентификация через FIDO2-ключ (assertion) с PRF-output.
 ///
-/// VULN-01 FIX: при API >= 6 запрашивает hmac-secret с фиксированной солью.
+/// При API >= 6 запрашивает hmac-secret с фиксированной солью.
 /// Аутентификатор возвращает 32-байтный аппаратно-привязанный секрет.
 pub fn assert_fido2_key_prompt(
     registered_credentials: &[Vec<u8>],
@@ -395,7 +395,7 @@ pub fn assert_fido2_key_prompt(
         );
 
         // Экран Windows «Ключ безопасности / iPhone, iPad или Android» перед
-        // входом приложение убрать не может — проверено на железе, 5.0.2:
+        // входом приложение убрать не может — проверено на железе:
         //   * подсказку «ключ только USB/NFC» (dwTransports в списке
         //     разрешённых) Windows на этом экране не учитывает, хотя поле
         //     доходит на своём смещении — см. тест разметки;
@@ -435,7 +435,7 @@ pub fn assert_fido2_key_prompt(
         let hwnd = windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0;
         let mut p_assertion: *mut WEBAUTHN_ASSERTION_V3 = ptr::null_mut();
 
-        // VULN-01 FIX: V6 options с PRF salt
+        // V6 options с PRF salt
         let hr = if api_version >= 6 && !registered_credentials.is_empty() {
             let mut prf_salt_buf = *PRF_SALT;
             let mut hmac_salt = WEBAUTHN_HMAC_SECRET_SALT {
@@ -617,7 +617,7 @@ pub fn assert_fido2_key_prompt(
             return Err(VaultError::FidoFailed(err_msg));
         }
 
-        // AUDIT 3.1.1: раньше по умолчанию подставлялся ПЕРВЫЙ зарегистрированный
+        // Раньше по умолчанию подставлялся ПЕРВЫЙ зарегистрированный
         // ключ, поэтому ответ неизвестного аутентификатора молча выдавался за
         // него. Теперь принимается только credential id из списка разрешённых.
         let mut matched_cid: Option<Vec<u8>> = None;
@@ -656,7 +656,7 @@ pub fn assert_fido2_key_prompt(
                 }
             }
 
-            // VULN-01 FIX: PRF-output из V3+ assertion
+            // PRF-output из V3+ assertion
             if ass.dwVersion >= 3 && !ass.pHmacSecret.is_null() {
                 let hmac_secret = &*ass.pHmacSecret;
                 if hmac_secret.cbFirst >= 32 && !hmac_secret.pbFirst.is_null() {

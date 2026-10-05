@@ -11,7 +11,7 @@ import { PinKeypad } from "./PinKeypad";
 import { PIN_DIGIT_MAX } from "@/lib/pinRules";
 
 /**
- * Регрессии AUDIT 3.1.1:
+ * Регрессии:
  *  - keypad слушает keydown на window и раньше перехватывал ввод из полей
  *    формы, лежащих поверх него (Sheet восстановления). Цифры долей попадали
  *    в скрытый PIN, а Enter отправлял мусор на разблокировку и сжигал попытки.

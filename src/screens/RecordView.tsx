@@ -23,13 +23,13 @@ import { Sheet } from "@/components/ui/Sheet";
 import { useTranslation, Trans } from 'react-i18next';
 import { isPasswordWeak } from "@/lib/healthCheck";
 
-// M-04: через сколько мс автоматически ре-маскировать раскрытый на экране секрет.
+// Через сколько мс автоматически ре-маскировать раскрытый на экране секрет.
 const REVEAL_HIDE_MS = 30_000;
 
 interface Props {
   dbType: "records" | "web";
   recordId: string;
-  /** N-03: включён гейт «копирование/просмотр» → показываем индикатор доверия. */
+  /** Включён гейт «копирование/просмотр» → показываем индикатор доверия. */
   requireAuth?: boolean;
   onBack: () => void;
   onEdit: () => void;
@@ -59,7 +59,7 @@ export function RecordView({
     apiGetEnableHealthCheck().then(setEnableHealthCheck).catch(() => {});
   }, []);
 
-  // M-04: раскрытый на экране секрет не должен висеть в state/DOM бесконечно.
+  // Раскрытый на экране секрет не должен висеть в state/DOM бесконечно.
   // Через REVEAL_HIDE_MS автоматически ре-маскируем поле (согласовано с
   // авто-очисткой буфера обмена). Таймеры чистятся при hide и размонтировании.
   const hideTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -77,7 +77,7 @@ export function RecordView({
     };
   }, []);
 
-  // AUDIT 3.1.1: колбэки родителя и toast держим в ref — иначе каждый тост
+  // Колбэки родителя и toast держим в ref — иначе каждый тост
   // менял их идентичность, refresh пересоздавался, и запись перезагружалась
   // с повторным раскрытием всех несекретных полей (лишние Hello-запросы при
   // включённом гейте «подтверждение для копирования и просмотра»).
@@ -158,7 +158,7 @@ export function RecordView({
                 <>
                   <span className="opacity-50 text-white/70">{t('recordView.sitePrefix')}</span>
                   {/*
-                    AUDIT 3.1.1: раньше здесь был <a target="_blank">, который
+                    Раньше здесь был <a target="_blank">, который
                     выглядел кликабельным, но ничего не делал: приложение
                     air-gapped, плагин opener не подключён, а CSP запрещает
                     навигацию наружу. Показываем адрес как текст — открытие
@@ -216,7 +216,7 @@ export function RecordView({
                 onReveal={async () => {
                   const v = await onReveal(record.id, f.id);
                   setRevealed((cur) => ({ ...cur, [f.id]: v }));
-                  // M-04: запускаем авто-скрытие этого поля.
+                  // Запускаем авто-скрытие этого поля.
                   clearTimer(f.id);
                   hideTimers.current[f.id] = setTimeout(() => {
                     setRevealed((cur) => {

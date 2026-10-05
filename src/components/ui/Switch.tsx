@@ -1,6 +1,6 @@
 import { cn } from "@/lib/cn";
 
-// R-06: единый toggle-переключатель. Раньше дублировался в StepHello,
+// Единый toggle-переключатель. Раньше дублировался в StepHello,
 // StepRecovery и settings/controls (ToggleRow).
 export function Switch({
   checked,

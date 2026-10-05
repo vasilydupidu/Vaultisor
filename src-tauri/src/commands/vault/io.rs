@@ -21,7 +21,7 @@ pub struct ExportInput {
     pub password: Option<String>,
 }
 
-/// AUDIT 3.1.1: команда выполняет Argon2id (512 МиБ) и потоковую работу с
+/// Команда выполняет Argon2id (512 МиБ) и потоковую работу с
 /// файлами хранилища. Синхронная Tauri-команда делала бы это в главном потоке
 /// и подвешивала интерфейс на несколько секунд.
 #[tauri::command]
@@ -31,11 +31,11 @@ pub async fn vault_export(input: ExportInput, state: State<'_, AppState>) -> Res
 }
 
 pub(crate) fn vault_export_blocking(input: ExportInput, state: &AppState) -> Result<()> {
-    // HIGH-RES-01: требуем разблокированную сессию.
+    // Требуем разблокированную сессию.
     // Без проверки злонамеренный JS мог экспортировать БД без ввода PIN —
     // и хотя файл бесполезен без master_key (DPAPI-защита), при компрометации
     // Shamir-долей атакующий получит доступ к содержимому.
-    // AUDIT M5: сначала авто-блокировка по простою.
+    // Сначала авто-блокировка по простою.
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
@@ -62,7 +62,7 @@ pub(crate) fn vault_export_blocking(input: ExportInput, state: &AppState) -> Res
     if !meta_src.exists() || !records_src.exists() || !web_src.exists() {
         return Err(VaultError::NotInitialized);
     }
-    // VULN-05 / VULN-11 FIX: санитизируем meta.db перед экспортом (обнуляем pin_hash, удаляем recovery_local).
+    // Санитизируем meta.db перед экспортом (обнуляем pin_hash, удаляем recovery_local).
     let (meta_bytes, records_bytes, web_bytes) =
         crate::commands::backup::snapshot_bundle_parts(state)?;
     let mut out =
@@ -114,7 +114,7 @@ pub struct ImportInput {
     pub password: Option<String>,
 }
 
-/// AUDIT 3.1.1: команда выполняет Argon2id (512 МиБ) и потоковую работу с
+/// Команда выполняет Argon2id (512 МиБ) и потоковую работу с
 /// файлами хранилища. Синхронная Tauri-команда делала бы это в главном потоке
 /// и подвешивала интерфейс на несколько секунд.
 #[tauri::command]
@@ -377,7 +377,7 @@ pub(crate) fn parse_bundle(bundle: &[u8], password: Option<&str>) -> Result<Pars
 
 /// Восстановить пользовательские данные из резервной копии в открытое
 /// хранилище (см. `storage::restore`). Метаданные безопасности не меняются.
-/// AUDIT 3.1.1: команда выполняет Argon2id (512 МиБ) и потоковую работу с
+/// Команда выполняет Argon2id (512 МиБ) и потоковую работу с
 /// файлами хранилища. Синхронная Tauri-команда делала бы это в главном потоке
 /// и подвешивала интерфейс на несколько секунд.
 #[tauri::command]
@@ -579,7 +579,7 @@ mod tests {
     #[test]
     fn parse_bundle_rejects_oversized_length() {
         // Заявленная meta_len = u32::MAX выходит за буфер → должно отвергнуться,
-        // а не паниковать на срезе (AUDIT: bounds перед slicing).
+        // а не паниковать на срезе: границы проверяются до среза.
         let mut b = build_vlt2(b"META", b"RECORDS", b"WEB");
         b[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
         assert!(parse_bundle(&b, None).is_err());
@@ -633,7 +633,7 @@ mod tests {
         }
     }
 
-    /// AUDIT 3.1.1: параметры KDF теперь лежат в самом файле, поэтому копия,
+    /// Параметры KDF теперь лежат в самом файле, поэтому копия,
     /// созданная на других параметрах, продолжает открываться и после смены
     /// констант сборки.
     #[test]

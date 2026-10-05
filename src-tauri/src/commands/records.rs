@@ -151,7 +151,7 @@ pub struct RevealInput {
 
 #[tauri::command]
 pub async fn record_reveal_field(input: RevealInput, state: State<'_, AppState>) -> Result<String> {
-    // N-03 (вариант B): просмотр секрета на экране — под тем же гейтом
+    // Просмотр секрета на экране — под тем же гейтом
     // «копирование/просмотр» (require_auth_for_copy) с окном доверия 60с.
     // Hello (async) вызываем ДО захвата мьютекса сессии.
     if state.check_autolock() {
@@ -231,7 +231,7 @@ pub struct HistoryEntryInput {
     pub db_type: String,
 }
 
-/// AUDIT 3.1.1: копирование архивного пароля без выдачи значения в webview.
+/// Копирование архивного пароля без выдачи значения в webview.
 #[tauri::command]
 pub async fn record_copy_password_history(
     input: HistoryEntryInput,
@@ -255,7 +255,7 @@ pub async fn record_copy_password_history(
     crate::commands::clipboard::copy_secret_text(&app, &value, clear_after)
 }
 
-/// AUDIT 3.1.1: восстановление значения из истории целиком на backend —
+/// Восстановление значения из истории целиком на backend —
 /// раньше фронтенд собирал record_update из полученного plaintext.
 #[tauri::command]
 pub async fn record_restore_password_history(

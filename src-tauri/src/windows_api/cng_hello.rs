@@ -24,7 +24,7 @@ static CNG_OPERATION_LOCK: once_cell::sync::Lazy<std::sync::Mutex<()>> =
 
 pub struct CreatedCredential {
     pub stored_id: String,
-    /// AUDIT 3.1.1: подпись — это входной материал KEK, поэтому она живёт в
+    /// Подпись — это входной материал KEK, поэтому она живёт в
     /// Zeroizing и не попадает в Debug-вывод.
     pub signature: zeroize::Zeroizing<Vec<u8>>,
 }
@@ -279,7 +279,7 @@ impl ProviderHandle {
                 NCRYPT_RSA_ALGORITHM,
                 &name,
                 CERT_KEY_SPEC(0),
-                // AUDIT 3.1.1: имя ключа — свежий UUID v4, поэтому коллизия
+                // Имя ключа — свежий UUID v4, поэтому коллизия
                 // означала бы аномалию. Тихо перезаписывать чужой ключ нельзя.
                 NCRYPT_FLAGS(0),
             )
@@ -379,7 +379,7 @@ impl KeyHandle {
                 "TPM key private export unexpectedly succeeded".into(),
             ));
         }
-        // AUDIT 3.1.1: одной неудачи NCryptExportKey недостаточно — провайдер
+        // Одной неудачи NCryptExportKey недостаточно — провайдер
         // может отклонить сам тип blob (NTE_BAD_TYPE) независимо от политики
         // экспорта, и тогда «проверка» проходила бы даже у экспортируемого
         // ключа. Проверяем политику явно.

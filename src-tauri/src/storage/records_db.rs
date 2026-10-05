@@ -346,7 +346,7 @@ fn read_revision(conn: &Connection) -> Result<u64> {
     u64::try_from(revision).map_err(|_| VaultError::MetaTampered)
 }
 
-/// AUDIT H5: проверить, что данный SQLCipher-ключ реально открывает
+/// Проверить, что данный SQLCipher-ключ реально открывает
 /// СУЩЕСТВУЮЩУЮ records-БД (расшифровка + HMAC первой страницы). Read-only,
 /// без миграций и записи. Используется в recovery ДО деструктивных операций,
 /// чтобы неверные Shamir-доли (например от другого экземпляра хранилища) не
@@ -440,10 +440,10 @@ mod tests {
         assert!(RecordsDb::verify_snapshot(&path, &key).is_err());
     }
 
-    // AUDIT (test-coverage): SQLCipher-открытие ДОЛЖНО отвергать неверный ключ.
+    // SQLCipher-открытие ДОЛЖНО отвергать неверный ключ.
     // Раньше «проверка ключа» была фиктивной (PRAGMA cipher_version не падал);
     // теперь пробник читает sqlite_master. Плюс проверяем records_key_opens,
-    // на котором держится верификация восстановления (H5).
+    // на котором держится проверка ключа при восстановлении.
     #[test]
     fn wrong_sqlcipher_key_is_rejected() {
         let dir = tempfile::tempdir().unwrap();
@@ -465,7 +465,7 @@ mod tests {
         // Верный ключ A — открывается.
         assert!(RecordsDb::open(&path, &key_a).is_ok());
 
-        // records_key_opens согласован с open (используется в recovery H5).
+        // records_key_opens согласован с open (на нём держится восстановление).
         assert!(!records_key_opens(&path, &key_b));
         assert!(records_key_opens(&path, &key_a));
     }

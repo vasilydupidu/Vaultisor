@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { fieldSaveValue } from "./recordDraft";
 
-describe("fieldSaveValue (H-01/M-05 контракт)", () => {
+describe("fieldSaveValue: контракт сохранения поля", () => {
   it("неподгруженное существующее поле → null (не менять)", () => {
     // value="" original=undefined (пользователь не открывал поле)
     expect(fieldSaveValue({ id: "f1", value: "", original: undefined })).toBeNull();

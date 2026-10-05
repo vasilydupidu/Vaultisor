@@ -35,7 +35,7 @@ interface Props {
 
 /**
  * Отмена пользователем не является ошибкой и не должна показывать тост.
- * AUDIT 3.1.1: раньше проверка была по русской подстроке сообщения backend,
+ * Раньше проверка была по русской подстроке сообщения backend,
  * из-за чего при английском интерфейсе отмена Windows Hello всё равно
  * показывалась как ошибка.
  */
@@ -65,7 +65,7 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
   const [fido2Available, setFido2Available] = useState(false);
   const [tpmAvailable, setTpmAvailable] = useState(true);
   const [appVersion, setAppVersion] = useState("");
-  // L-05: ввод буквенно-цифрового PIN (для хранилищ, созданных с усиленным PIN).
+  // Ввод буквенно-цифрового PIN (для хранилищ, созданных с усиленным PIN).
   // Флаг не хранится в БД — пользователь переключается вручную; unlock просто
   // принимает строку и пробует развернуть master.
   const [alnum, setAlnum] = useState(false);
@@ -129,7 +129,7 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
 
   const submit = async () => {
     if (busy) return;
-    // L-08: не отправляем заведомо короткий ввод — иначе он засчитывается как
+    // Не отправляем заведомо короткий ввод — иначе он засчитывается как
     // неудачная попытка и увеличивает задержку PIN. Минимум согласован с backend:
     // 11 цифр для PIN (TPM) либо 15 символов для мастер-пароля.
     const minLen = tpmAvailable ? PIN_DIGIT_MIN : PASSPHRASE_MIN;
@@ -224,7 +224,7 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
               onSubmit={submit}
               shake={shake}
               // Пока открыт Sheet восстановления, keypad не должен реагировать
-              // на физическую клавиатуру (AUDIT 3.1.1).
+              // на физическую клавиатуру.
               disabled={busy || recoverOpen}
             />
           )

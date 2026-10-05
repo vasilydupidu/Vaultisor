@@ -43,7 +43,7 @@ pub enum SessionState {
         web_db: RecordsDb,
         unlocked_at: Instant,
         last_activity: Instant,
-        /// N-03 (вариант B): время последнего успешного Windows Hello для гейта
+        /// Время последнего успешного Windows Hello для гейта
         /// «копирование/просмотр» (require_auth_for_copy). Живёт внутри Unlocked,
         /// поэтому автоматически сбрасывается при ЛЮБОЙ блокировке сессии.
         auth_verified_at: Option<Instant>,
@@ -193,7 +193,7 @@ impl AppState {
         self.file_grants.lock().clear();
         self.pending_import_deletions.lock().clear();
         self.pending_recovery_saves.lock().clear();
-        // AUDIT 3.1.1: буфер обмена мог пережить блокировку и оставить секрет
+        // Буфер обмена мог пережить блокировку и оставить секрет
         // доступным на экране блокировки. Чистим только своё содержимое.
         self.os.on_lock();
     }

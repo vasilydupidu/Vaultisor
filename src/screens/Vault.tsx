@@ -98,7 +98,7 @@ export function VaultScreen({ onLock }: Props) {
   // Reorder возможен только в неотфильтрованном виде (иначе sort_order по
   // подмножеству сломал бы глобальный порядок).
   const canReorder = selectedCategory === "all" && !query;
-  // N-03: включён ли гейт «копирование/просмотр» (для индикатора в RecordView).
+  // Включён ли гейт «копирование/просмотр» (для индикатора в RecordView).
   const requireAuth = !!(settings?.require_auth_for_copy && settings?.use_windows_hello);
 
   const handleReorder = (sourceId: string, targetId: string) => {
@@ -136,7 +136,7 @@ export function VaultScreen({ onLock }: Props) {
         icon: full.icon,
         color: full.color,
         category,
-        // value:null → «не менять» (H-01 контракт): секреты не перезаписываются.
+        // value:null → «не менять»: секреты не перезаписываются.
         fields: full.fields.map((f) => ({
           id: f.id,
           field_type: f.field_type,
@@ -198,7 +198,7 @@ export function VaultScreen({ onLock }: Props) {
     }
   };
 
-  // AUDIT 3.1.1: системный window.confirm нелокализован и блокирует webview.
+  // Системный window.confirm нелокализован и блокирует webview.
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
 
   const handleBatchDelete = async () => {

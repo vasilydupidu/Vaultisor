@@ -19,7 +19,7 @@ interface Props extends InputHTMLAttributes<HTMLInputElement> {
 export const Input = forwardRef<HTMLInputElement, Props>(
   ({ label, hint, error, leftIcon, rightSlot, className, id, type, ...props }, ref) => {
     const { t } = useTranslation();
-    // AUDIT 3.1.1: раньше id генерировался через Math.random() на каждом
+    // Раньше id генерировался через Math.random() на каждом
     // рендере, поэтому htmlFor и id расходились и DOM-атрибут дёргался.
     const generatedId = useId();
     const inputId = id ?? generatedId;

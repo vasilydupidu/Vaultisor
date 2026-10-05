@@ -104,7 +104,7 @@ export function RecoveryRegenerate({ onClose }: { onClose: () => void }) {
   const [paperSaved, setPaperSaved] = useState(false);
   const toast = useToast();
 
-  // AUDIT 3.1.1: под StrictMode эффект монтируется дважды, и поколение
+  // Под StrictMode эффект монтируется дважды, и поколение
   // восстановления регенерировалось два раза подряд — только что показанные
   // пользователю части B/C успевали устареть до того, как он их сохранит.
   const startedRef = useRef(false);

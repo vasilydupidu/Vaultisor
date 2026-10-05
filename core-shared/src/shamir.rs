@@ -16,10 +16,10 @@ pub struct Share {
 
 /// Разбить секрет на `n` долей с порогом `threshold`.
 pub fn split_secret(secret: &[u8], threshold: u8, n: u8) -> Result<Vec<Share>> {
-    // AUDIT L2: threshold < 2 — foot-gun: при threshold=1 каждая доля РАВНА
+    // Threshold < 2 — foot-gun: при threshold=1 каждая доля РАВНА
     // секрету (цикл коэффициентов пуст), т.е. любая одна доля раскрывает master.
-    // Запрещаем на границе API. (Целостность реконструкции проверяется отдельно
-    // в recovery через records_key_opens — H5.)
+    // Запрещаем на границе API. (Целостность реконструкции проверяется отдельно:
+    // восстановление требует, чтобы собранный ключ открывал обе базы.)
     if threshold < 2 || n == 0 {
         return Err(CoreError::Crypto(
             "shamir: threshold must be >= 2, n > 0".into(),
@@ -63,7 +63,7 @@ pub fn combine_shares(shares: &[Share], threshold: u8) -> Result<zeroize::Zeroiz
     if shares.is_empty() {
         return Err(CoreError::Crypto("shamir: no shares".into()));
     }
-    // AUDIT 3.1.1: сравнение через `as u8` переполнялось — 256 долей давали 0
+    // Сравнение через `as u8` переполнялось — 256 долей давали 0
     // и проходили проверку порога. Сравниваем в usize.
     if shares.len() < usize::from(threshold) {
         return Err(CoreError::Crypto(format!(

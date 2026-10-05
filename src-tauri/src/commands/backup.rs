@@ -78,7 +78,7 @@ fn config_mac(key: &[u8; 32], cfg: &BackupConfig) -> Result<[u8; 32]> {
 
 /// Прочитать аутентифицированный конфиг по уже извлечённому integrity-ключу.
 ///
-/// AUDIT 3.1.1 (CRITICAL): раньше эта функция сама лезла за ключом в
+/// Раньше эта функция сама лезла за ключом в
 /// `state.session`, а `backup_now`/`backup_set_config` вызывали её, уже держа
 /// этот мьютекс. `parking_lot::Mutex` нереентрантный, поэтому команда намертво
 /// вешала главный поток Tauri вместе со всем интерфейсом. Теперь функция
@@ -94,8 +94,8 @@ fn read_config_at(data_dir: &Path, key: &[u8; 32]) -> Result<BackupConfig> {
     let envelope: BackupConfigEnvelope = match serde_json::from_slice(&raw) {
         Ok(envelope) => envelope,
         Err(_) => {
-            // A pre-3.0.2 config did not authenticate its destination. Keep no
-            // path authority from that format; the user must select it again.
+            // Конфиг без аутентифицированного конверта (подложенный или
+            // повреждённый) не даёт права на путь: каталог выбирается заново.
             return Ok(BackupConfig::default());
         }
     };
@@ -217,7 +217,7 @@ pub struct BackupResult {
     pub path: String,
 }
 
-/// AUDIT 3.1.1: синхронные Tauri-команды выполняются в главном потоке, поэтому
+/// Синхронные Tauri-команды выполняются в главном потоке, поэтому
 /// сборка бандла (три online-backup SQLite и чтение файлов) подвешивала весь
 /// интерфейс. Автобэкап вызывается при входе в хранилище, то есть зависание
 /// приходилось ровно на старт. Тяжёлая часть вынесена в blocking-пул.
@@ -233,7 +233,7 @@ pub(crate) fn backup_now_blocking(state: &AppState, request_id: &str) -> Result<
     let request_id = crate::commands::request::parse(request_id)?;
     // Требуем разблокированную сессию (как и экспорт) — защита от эксфильтрации
     // фоновым/вредоносным кодом без ведома пользователя.
-    // AUDIT M5: сначала авто-блокировка по простою.
+    // Сначала авто-блокировка по простою.
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
@@ -296,7 +296,7 @@ pub(crate) fn backup_now_blocking(state: &AppState, request_id: &str) -> Result<
 }
 
 /// Собрать VLT2-бандл из трёх зашифрованных БД (meta + records + web).
-/// VULN-05 FIX: meta.db санитизируется перед включением — pin_hash обнуляется.
+/// `meta.db` санитизируется перед включением — pin_hash обнуляется.
 pub(crate) fn build_bundle(state: &AppState) -> Result<Vec<u8>> {
     let (meta, records, web) = snapshot_bundle_parts(state)?;
     let mut out = Vec::with_capacity(16 + meta.len() + records.len() + web.len());
@@ -449,7 +449,7 @@ fn validate_dir(p: &str) -> Result<&Path> {
             "Путь содержит запрещённые сегменты ..".into(),
         ));
     }
-    // AUDIT M8: отклоняем UNC/сетевые пути — бэкап не должен уходить на SMB
+    // Отклоняем UNC/сетевые пути — бэкап не должен уходить на SMB
     // атакующего по инъектированному пути. Локальная папка облачного клиента
     // (Я.Диск/OneDrive) — обычный путь с буквой диска, под ограничение не попадает.
     #[cfg(windows)]
@@ -469,7 +469,7 @@ fn validate_dir(p: &str) -> Result<&Path> {
 mod tests {
     use super::*;
 
-    /// AUDIT 3.1.1 (CRITICAL, регрессия): конфиг резервных копий обязан
+    /// Конфиг резервных копий обязан
     /// читаться и писаться без обращения к состоянию сессии. Раньше это
     /// обращение было, и команды, уже державшие мьютекс сессии, вешали
     /// приложение намертво. Тест работает без Tauri именно потому, что
@@ -546,9 +546,9 @@ mod tests {
     }
 
     #[test]
-    fn legacy_unauthenticated_config_grants_no_path_authority() {
+    fn unauthenticated_config_grants_no_path_authority() {
         let dir = tempfile::tempdir().unwrap();
-        // Формат до 3.0.2: голый BackupConfig без конверта и MAC.
+        // Голый BackupConfig без конверта и MAC.
         std::fs::write(
             config_path(dir.path()),
             br#"{"dir":"C:\\attacker","frequency":"daily","last_backup":null}"#,

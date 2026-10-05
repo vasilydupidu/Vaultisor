@@ -19,7 +19,7 @@ use windows::Win32::Security::Cryptography::{
 
 use crate::error::{Result, VaultError};
 
-// AUDIT M6/L3 — принятый остаток (задокументировано намеренно):
+// Принятый остаток (задокументировано намеренно):
 // ENTROPY — константа в бинарнике, а не секрет. DPAPI(CurrentUser) — это ACL
 // уровня ОС, а не криптография: код в той же сессии Windows может вызвать
 // CryptProtect/UnprotectData с этой же entropy. Поэтому same-user malware
@@ -85,7 +85,7 @@ pub fn protect_with_entropy(plaintext: &[u8], entropy_bytes: &[u8]) -> Result<Ve
             &mut output,
         )
         .map_err(|error| {
-            // AUDIT 3.1.1: код ошибки больше не проглатывается — без него
+            // Код ошибки больше не проглатывается — без него
             // невозможно отличить «чужая учётная запись» от «повреждён blob».
             log::warn!("CryptProtectData failed: {error}");
             VaultError::DpapiFailure

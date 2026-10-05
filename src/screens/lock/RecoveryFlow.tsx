@@ -34,7 +34,7 @@ export function RecoveryFlow({
   const [newPin, setNewPin] = useState("");
   const [newPinConfirm, setNewPinConfirm] = useState("");
   const [busy, setBusy] = useState(false);
-  // L-05: разрешить задать буквенно-цифровой PIN и при восстановлении.
+  // Разрешить задать буквенно-цифровой PIN и при восстановлении.
   // Без TPM 2.0 нужен мастер-пароль ≥15 → сразу буквенный режим (цифровой
   // ограничен PIN_DIGIT_MAX символами и не даст набрать 15).
   const [alnum, setAlnum] = useState(!tpmAvailable);

@@ -71,7 +71,7 @@ pub enum VaultError {
     #[error("DATA_ROLLBACK:{0}: Базы хранилища не совпадают с подтверждённым состоянием — файлы заменены старыми копиями.")]
     DataRollback(String),
 
-    // AUDIT 3.1.1: машинный префикс, чтобы фронтенд определял состояние по коду,
+    // Машинный префикс, чтобы фронтенд определял состояние по коду,
     // а не по подстроке русского текста (ломалось бы при любой правке формулировки
     // и не работало бы при смене языка сообщений).
     #[error("LOCKED: Хранилище заблокировано")]
@@ -98,7 +98,7 @@ pub enum VaultError {
     #[error("Системная ошибка: {0}")]
     System(String),
 
-    // AUDIT 3.1.1: сообщения, которые действительно предназначены пользователю,
+    // Сообщения, которые действительно предназначены пользователю,
     // получили собственный вариант. Раньше они ехали в System вместе с текстами
     // Windows API, из-за чего System нельзя было безопасно редактировать.
     #[error("HELLO_SETUP_REQUIRED: {0}")]
@@ -161,7 +161,7 @@ impl Serialize for VaultError {
     where
         S: Serializer,
     {
-        // MED-11: Sanitize internal details before sending to the frontend.
+        // Sanitize internal details before sending to the frontend.
         // Structured error variants keep their user-facing messages;
         // catch-all wrappers (Database, Io, Internal) are
         // redacted so stack traces / file paths don't leak to the webview.
@@ -170,7 +170,7 @@ impl Serialize for VaultError {
             VaultError::FidoFailed(_) => "FIDO_FAILED: Операция FIDO2 не выполнена".to_owned(),
             VaultError::Io(_) => "Ошибка ввода/вывода".to_owned(),
             VaultError::Internal(_) => "Внутренняя ошибка".to_owned(),
-            // AUDIT 3.1.1: System и Storage несут тексты Windows API и SQLite
+            // System и Storage несут тексты Windows API и SQLite
             // (включая имена CNG-ключей и пути), поэтому наружу уходит только
             // код; подробности остаются в логе.
             VaultError::System(detail) => {
@@ -197,7 +197,7 @@ mod tests {
         serde_json::to_string(&error).expect("VaultError must serialize")
     }
 
-    /// AUDIT 3.1.1: наружу уходит код, а не текст Windows API / SQLite.
+    /// Наружу уходит код, а не текст Windows API / SQLite.
     #[test]
     fn internal_details_never_reach_the_frontend() {
         let leaky = [

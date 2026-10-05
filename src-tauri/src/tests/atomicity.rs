@@ -97,7 +97,7 @@ fn create_case(plan: Option<(usize, Mode)>) -> CaseFuture {
     })
 }
 
-/// H-01: создание поверх существующего хранилища — при любой причине отказа —
+/// Создание поверх существующего хранилища — при любой причине отказа —
 /// не трогает ни файлы, ни TPM-ключ хранилища.
 #[tokio::test]
 async fn create_never_destroys_an_existing_vault() {
@@ -284,7 +284,7 @@ fn field_type_case(plan: Option<(usize, Mode)>) -> CaseFuture {
     })
 }
 
-/// H-02: смена типа без повторного ввода значения сохраняет значение.
+/// Смена типа без повторного ввода значения сохраняет значение.
 #[tokio::test]
 async fn field_type_change_keeps_the_value() {
     let env = prepared().await;

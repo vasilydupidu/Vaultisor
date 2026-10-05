@@ -35,7 +35,7 @@ interface DraftField extends FieldInput {
   /** Локальный uid для React.key. */
   uid: string;
   /**
-   * H-01: значение поля, загруженное при открытии редактора. Используется на
+   * Значение поля, загруженное при открытии редактора. Используется на
    * сохранении для детекции изменений: если value не менялся относительно
    * original, поле отправляется как value=null («не менять»), и его blob не
    * перезаписывается. Это защищает секрет от затирания, если расшифровка при
@@ -43,10 +43,10 @@ interface DraftField extends FieldInput {
    * шифротекст вместо пустой строки).
    */
   original?: string;
-  /** H-01: true — расшифровать поле при загрузке не удалось (показано пустым). */
+  /** `true` — расшифровать поле при загрузке не удалось (показано пустым). */
   revealFailed?: boolean;
   /**
-   * M-05: было ли значение поля уже подгружено (расшифровано) в редакторе.
+   * Было ли значение поля уже подгружено (расшифровано) в редакторе.
    * Существующие поля загружаются лениво — значение расшифровывается только по
    * кнопке «Показать / изменить», а не жадно при открытии записи. Пока
    * revealed=false, поле не трогалось и на сохранении уйдёт как value:null.
@@ -172,7 +172,7 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
     } finally {
       setLoading(false);
     }
-    // AUDIT 3.1.1 (HIGH): зависимости намеренно ограничены идентичностью
+    // Зависимости намеренно ограничены идентичностью
     // записи. Раньше сюда входили toast и onCancel, которые пересоздавались
     // на каждом рендере родителя, поэтому любой всплывающий тост перезапускал
     // загрузку и затирал несохранённый черновик пользователя.
@@ -206,7 +206,7 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
     setFields((cur) => cur.filter((f) => f.uid !== uid));
   };
 
-  // M-05: подгрузить (расшифровать) значение существующего поля по требованию.
+  // Подгрузить (расшифровать) значение существующего поля по требованию.
   const revealField = async (uid: string) => {
     const f = fields.find((x) => x.uid === uid);
     if (!f || !f.id || f.revealed || !recordId) return;
@@ -214,7 +214,7 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
       const v = await apiRecordReveal(dbType, recordId, f.id);
       updateField(uid, { value: v, original: v, revealed: true, revealFailed: false });
     } catch {
-      // H-01: расшифровка не удалась. Помечаем поле; на сохранении оно уйдёт как
+      // Расшифровка не удалась. Помечаем поле; на сохранении оно уйдёт как
       // value:null (не менять), пока пользователь не введёт новое значение.
       updateField(uid, { value: "", original: "", revealed: true, revealFailed: true });
       toast.error(t('recordEdit.revealError'));
@@ -246,10 +246,10 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
             is_secret: f.is_secret,
             sort_order: i,
           };
-          // H-01/M-05: нетронутое/неподгруженное существующее поле уходит как
+          // Нетронутое/неподгруженное существующее поле уходит как
           // value:null («не менять»), секрет не перезаписывается; изменённые и
           // новые — строкой. Логика вынесена в чистую fieldSaveValue (покрыта
-          // тестами L-06).
+          // тестами).
           return { ...base, value: fieldSaveValue(f) };
         }),
       };
@@ -386,7 +386,7 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
                 </>
               ) : null}
               {f.id && !f.revealed ? (
-                // M-05: значение существующего поля ещё не подгружено — не
+                // Значение существующего поля ещё не подгружено — не
                 // расшифровываем, пока пользователь явно не откроет поле.
                 <button
                   type="button"

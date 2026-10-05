@@ -8,7 +8,7 @@ interface Props {
   /** Показывать ли индикаторы стойкости (расчёт приходит с backend). */
   showHealth?: boolean;
   onPointerDown?: (e: React.PointerEvent) => void;
-  /** R-02: открытие с клавиатуры (Enter/Space). */
+  /** Открытие с клавиатуры (Enter/Space). */
   onOpen?: () => void;
   /** Фаза 2 (a11y): клавиатурный reorder — Alt+↑/↓. undefined = недоступно. */
   onMoveUp?: () => void;

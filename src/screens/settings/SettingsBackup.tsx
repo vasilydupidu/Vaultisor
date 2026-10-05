@@ -77,7 +77,7 @@ export function SettingsBackup() {
     }
   };
 
-  // AUDIT 3.1.1: window.confirm — нелокализованный системный диалог, который к
+  // `window.confirm` — нелокализованный системный диалог, который к
   // тому же блокирует поток webview. Подтверждение показываем своей карточкой.
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [exportPassword, setExportPassword] = useState("");

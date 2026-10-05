@@ -1,5 +1,5 @@
 // Чистые правила валидации PIN (используются в онбординге; вынесены отдельно
-// для юнит-тестов — L-06). Согласованы с backend auth::pin::validate_pin_format.
+// для юнит-тестов). Согласованы с backend auth::pin::validate_pin_format.
 import i18n from '@/lib/i18n';
 
 export type PinMode = "digit" | "alnum" | "passphrase";

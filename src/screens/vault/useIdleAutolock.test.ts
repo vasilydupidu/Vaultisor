@@ -34,7 +34,7 @@ describe("useIdleAutolock", () => {
   });
 
   /**
-   * AUDIT 3.1.1: heartbeat раньше запускался только вместе с локальным
+   * Heartbeat раньше запускался только вместе с локальным
    * таймером простоя. При autolock=0 и пока настройки грузились UI не
    * опрашивал бэкенд и оставался «разблокированным» после блокировки сессии.
    */
@@ -61,7 +61,7 @@ describe("useIdleAutolock", () => {
     expect(onLock).toHaveBeenCalledTimes(1);
   });
 
-  /** AUDIT 3.1.1: onLock вызывался каждые 5с, пока родитель размонтировался. */
+  /** `onLock` вызывался каждые 5с, пока родитель размонтировался. */
   it("вызывает onLock не более одного раза", async () => {
     vi.useFakeTimers();
     heartbeat.mockResolvedValue(false);
