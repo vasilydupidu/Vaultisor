@@ -1,24 +1,23 @@
 name: CI
 
+# Запускается только вручную (gh workflow run ci.yml) и из release.yml.
+
 on:
+  workflow_dispatch:
   workflow_call:
     inputs:
       cache:
         description: Кэш сборки Rust. Релиз вызывает CI без кэша.
         type: boolean
         default: true
-  push:
-    branches: [main]
-  pull_request:
 
 # Токен по умолчанию ничего не может: каждый job получает только своё.
 permissions: {}
 
-# Новый push в ту же ветку PR отменяет устаревшую проверку; main и вызов из
-# релиза не отменяются.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # github.workflow у вызова из релиза — «Release»: ручной CI и релиз не ждут
+  # друг друга.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
 
 jobs:
   frontend:

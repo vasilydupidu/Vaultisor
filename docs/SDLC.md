@@ -139,14 +139,29 @@ memory-hard, и на раннере с большим числом ядер па
 | Нативная крипта | SQLCipher + OpenSSL 3.x собираются из исходников (`bundled-sqlcipher-vendored-openssl`), а не берутся из системы |
 | Подмена wildcard-зависимости | `cargo deny check bans` — `wildcards = "deny"`, исключение только для path-зависимостей внутри workspace |
 | Подмена git-зависимости | `cargo deny check sources` — `unknown-git = "deny"` |
-| Подмена GitHub Action | все `uses:` закреплены по SHA коммита; обновления приходят через Dependabot |
+| Подмена GitHub Action | все `uses:` закреплены по SHA коммита; обновление пина — вручную, с проверкой `zizmor` online |
 
 Граф зависимостей в `deny.toml` зафиксирован на `x86_64-pc-windows-msvc`. Без
 этого проверки идут по объединённому графу всех платформ и спотыкаются о GTK/glib,
 которых в Windows-бинаре нет ни строкой.
 
-Расписание: каждый push и PR, плюс еженедельный прогон по понедельникам — чтобы
-новая CVE в неизменённой зависимости не ждала следующего коммита.
+### Запуск
+
+Автоматических запусков нет: push, PR и расписание workflows не запускают.
+Репозиторий служит хранилищем версий, а GitHub Actions в нём выключены
+и включаются только на время ручного прогона:
+
+```bash
+gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=true -f allowed_actions=all
+gh workflow run ci.yml          # полный CI
+gh workflow run audit.yml       # cargo-deny + npm audit
+gh workflow run release.yml     # пробная релизная сборка без публикации
+gh run watch
+gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=false
+```
+
+Основная проверка — локальные гейты из раздела 3; `cargo deny` и `npm audit`
+стоит прогонять перед каждым релизом и после обновления зависимостей.
 
 ### Почему Actions закреплены по SHA
 
@@ -160,8 +175,10 @@ memory-hard, и на раннере с большим числом ядер па
 `tj-actions/changed-files` все теги были переставлены на вредоносный коммит, и
 секреты утекли из тысяч репозиториев. SHA переставить нельзя — в этом и смысл.
 
-Цену ручного обновления снимает Dependabot (`.github/dependabot.yml`): он
-присылает PR с новым SHA, и обновление остаётся явным решением.
+Цена пина — ручное обновление: новый SHA берётся из релиза action, версия
+пишется комментарием, а `GH_TOKEN=$(gh auth token) zizmor --persona pedantic
+.github/workflows` проверяет, что SHA принадлежит этому action и совпадает с
+версией в комментарии.
 
 ---
 
@@ -179,14 +196,19 @@ memory-hard, и на раннере с большим числом ядер па
    Имя всегда несёт версию: безымянная копия рядом провоцирует запустить не ту
    сборку и прислать лог не от неё.
 5. Проверить workflows: `actionlint` и `zizmor --persona pedantic .github/workflows`.
-6. Коммит + аннотированный тег `vX.Y.Z`, пуш тега.
-7. GitHub Actions: `build` собирает `.exe` один раз и выкладывает артефакт,
-   `publish` проверяет его хэш и публикует `Vaultisor-<версия>.exe`,
-   `SHA256SUMS.txt` и `build-info.json`.
+6. Коммит + аннотированный тег `vX.Y.Z`, пуш тега. Тег сам ничего не
+   запускает.
+7. Включить Actions и запустить релиз вручную:
+   `gh workflow run release.yml --ref vX.Y.Z -f publish=true`. `build` собирает
+   `.exe` один раз и выкладывает артефакт, `publish` проверяет его хэш и
+   публикует `Vaultisor-<версия>.exe`, `SHA256SUMS.txt` и `build-info.json`.
+   После прогона Actions снова выключить (раздел 4, «Запуск»).
 
 ### Устройство релизного pipeline
 
-`.github/workflows/release.yml`, запускается тегом `v*`:
+`.github/workflows/release.yml`, запускается только вручную. Без
+`publish=true` это пробная сборка: проверки и артефакт, без релиза.
+`publish=true` допустим только с тега, совпадающего с версией в `package.json`:
 
 ```text
 checks (ci.yml без кэша) → build → [attest] → publish
@@ -195,9 +217,9 @@ checks (ci.yml без кэша) → build → [attest] → publish
 | Job | Права токена | Что делает |
 |-----|--------------|------------|
 | `checks` | `contents: read` | полный CI; кэш сборки отключён, чтобы кэш из другой ветки не попал в релиз |
-| `build` | `contents: read` | сверяет тег с версией, `npm ci`, toolchain из `rust-toolchain.toml`, `build.ps1` (cargo `--locked`), `SHA256SUMS.txt` и `build-info.json`; выкладывает их неизменяемым артефактом run'а |
-| `attest` | `id-token: write`, `attestations: write` | provenance-attestation бинарника. Выполняется только для публичного репозитория: для приватного GitHub выдаёт attestations лишь на Enterprise Cloud |
-| `publish` | `contents: write` | ничего не собирает: скачивает тот же артефакт, проверяет `sha256sum --check`, создаёт релиз через `gh release create --verify-tag` |
+| `build` | `contents: read` | при запуске с тега сверяет его с версией, `npm ci`, toolchain из `rust-toolchain.toml`, `build.ps1` (cargo `--locked`), `SHA256SUMS.txt` и `build-info.json`; выкладывает их неизменяемым артефактом run'а |
+| `attest` | `id-token: write`, `attestations: write` | provenance-attestation бинарника. Выполняется только при `publish=true` и только для публичного репозитория: для приватного GitHub выдаёт attestations лишь на Enterprise Cloud |
+| `publish` | `contents: write` | только при `publish=true`; ничего не собирает: скачивает тот же артефакт, проверяет `sha256sum --check`, создаёт релиз через `gh release create --verify-tag` |
 
 Общие правила всех workflows: `permissions: {}` на уровне файла и явный минимум
 на каждый job; `actions/checkout` с `persist-credentials: false`; `npm ci`
@@ -263,6 +285,10 @@ SemVer, где «публичный API» — это **формат данных
 - **Нет Authenticode-подписи.** Бинарь публикуется unsigned, проверка — по
   SHA-256. Сертификат стоит денег и требует HSM; до появления такового
   подписывать нечем.
+- **Нет автоматического CI.** Push, PR и расписание ничего не запускают,
+  GitHub Actions в репозитории выключены. Гейты прогоняются локально, а CI,
+  audit и релиз — вручную (раздел 4, «Запуск»). Dependabot не подключён:
+  обновления зависимостей и пинов Actions — явное ручное решение.
 - **Нет автообновления.** Апдейтер — это сетевой канал с правом записи в
   исполняемый файл; для офлайнового хранилища секретов это худший размен из
   возможных.

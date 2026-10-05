@@ -4,9 +4,11 @@
 
 ---
 
-## 🚀 Как выпустить новый релиз (Автоматически)
+## 🚀 Как выпустить новый релиз
 
-Для выпуска новой версии достаточно выполнить 3 простых шага:
+Автоматических запусков CI нет: GitHub Actions в репозитории выключены и
+включаются только на время ручного прогона ([`docs/SDLC.md`](./SDLC.md),
+раздел 4, «Запуск»).
 
 ### Шаг 1. Обновить версию и документы
 Версия (например, `5.1.0`) указывается в `package.json`, `src-tauri/Cargo.toml`
@@ -19,13 +21,20 @@
 Гейты из [`docs/SDLC.md`](./SDLC.md), раздел 3, плюс `actionlint` и
 `zizmor --persona pedantic .github/workflows`.
 
-### Шаг 3. Тег релиза
+### Шаг 3. Тег и ручной запуск релиза
 ```bash
 git tag -a v5.1.0 -m "Vaultisor v5.1.0"
 git push origin v5.1.0
+gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=true -f allowed_actions=all
+gh workflow run release.yml --ref v5.1.0 -f publish=true
+gh run watch
+gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=false
 ```
 
-Тег обязан совпадать с версией в `package.json`, иначе `build` остановится.
+Пуш тега сам ничего не запускает. Тег обязан совпадать с версией в
+`package.json`, иначе `build` остановится; `publish=true` без тега тоже
+останавливает сборку. Без `publish=true` тот же workflow — пробная сборка:
+проверки и артефакт run'а, без релиза.
 Дальше `release.yml`: `checks` → `build` (неизменяемый артефакт) → `attest`
 (только для публичного репозитория) → `publish` (проверка хэша и публикация
 того же артефакта на [GitHub Releases](https://github.com/vasilydupidu/Vaultisor/releases)).

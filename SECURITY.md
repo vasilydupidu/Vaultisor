@@ -148,7 +148,8 @@ Checkpoint намеренно лежит вне папки хранилища: �
 - Релиз: сборка без кэшей → неизменяемый артефакт → публикация после сверки
   SHA-256; toolchain Rust зафиксирован, `npm ci`, cargo `--locked`.
 - `cargo deny` (advisories, лицензии, источники), `cargo audit`, `npm audit`
-  — на каждый push и еженедельно.
+  — перед релизом и после обновления зависимостей. CI автоматически не
+  запускается: проверки прогоняются локально и вручную в GitHub Actions.
 - Бинарник **не подписан** Authenticode. Проверяйте SHA-256 по
   `SHA256SUMS.txt` из релиза.
 
@@ -294,6 +295,7 @@ share recovery.
 - Release: a cache-free build → an immutable artifact → publication after the
   SHA-256 is verified; the Rust toolchain is pinned, `npm ci`, cargo `--locked`.
 - `cargo deny` (advisories, licenses, sources), `cargo audit` and `npm audit`
-  run on every push and weekly.
+  run before every release and after dependency updates. CI never runs
+  automatically: checks run locally and, on demand, in GitHub Actions.
 - The binary is **not** Authenticode-signed. Verify its SHA-256 against
   `SHA256SUMS.txt` from the release.

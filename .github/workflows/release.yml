@@ -8,11 +8,18 @@ name: Release
 #   attestations лишь на Enterprise Cloud) подписывает provenance артефакта;
 # - publish ничего не собирает: скачивает тот же артефакт, сверяет хэши и
 #   публикует. Право на запись в репозиторий есть только у этого job'а.
+#
+# Запускается только вручную:
+#   gh workflow run release.yml                           — пробная сборка, без публикации;
+#   gh workflow run release.yml --ref vX.Y.Z -f publish=true — релиз с тега.
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Опубликовать GitHub Release (только с тега vX.Y.Z)
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -42,14 +49,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Tag matches the product version
+      - name: Ref matches the product version
         shell: pwsh
         env:
-          TAG: ${{ github.ref_name }}
+          REF: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($env:TAG -ne "v$version") {
-            throw "Tag $env:TAG does not match package.json version $version"
+          if ($env:REF_TYPE -eq "tag") {
+            if ($env:REF -ne "v$version") {
+              throw "Tag $env:REF does not match package.json version $version"
+            }
+          } elseif ($env:PUBLISH -eq "true") {
+            throw "Publishing requires a tag: gh workflow run release.yml --ref v$version -f publish=true"
           }
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -80,7 +93,7 @@ jobs:
       - name: Checksums and build information
         shell: pwsh
         env:
-          TAG: ${{ github.ref_name }}
+          REF: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
         run: |
@@ -96,7 +109,7 @@ jobs:
           # sha256sum format, LF line endings: publish verifies it on Linux.
           [IO.File]::WriteAllText("release/SHA256SUMS.txt", "$hash  $($exe.Name)`n")
           $info = [ordered]@{
-            tag       = $env:TAG
+            ref       = $env:REF
             commit    = $env:COMMIT
             run_id    = $env:RUN_ID
             rustc     = (rustc --version)
@@ -122,7 +135,7 @@ jobs:
   attest:
     name: Build provenance attestation
     needs: build
-    if: github.event.repository.visibility == 'public'
+    if: inputs.publish && github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -143,7 +156,7 @@ jobs:
     needs: [build, attest]
     # attest пропускается в приватном репозитории — это не повод не публиковать.
     if: >-
-      ${{ !cancelled() && needs.build.result == 'success'
+      ${{ !cancelled() && inputs.publish && needs.build.result == 'success'
       && (needs.attest.result == 'success' || needs.attest.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10

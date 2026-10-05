@@ -1,19 +1,15 @@
 name: Supply-chain audit
 
-# SCA-проверки зависимостей (RUSTSEC + npm) на каждый push/PR и еженедельно.
+# SCA-проверки зависимостей (RUSTSEC + npm). Запускается только вручную:
+# gh workflow run audit.yml
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-  schedule:
-    - cron: "0 6 * * 1" # каждый понедельник 06:00 UTC
+  workflow_dispatch:
 
 permissions: {}
 
 concurrency:
   group: audit-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   cargo-deny:
