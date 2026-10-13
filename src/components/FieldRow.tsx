@@ -20,9 +20,9 @@ const fieldColors: Record<FieldType, string> = {
   secret: "bg-danger/15 text-danger border-danger/20",
   api: "bg-brand-500/15 text-brand-300 border-brand-500/20",
   key: "bg-accent-400/15 text-accent-300 border-accent-400/20",
-  id: "bg-white/[0.05] text-white/70 border-white/10",
-  comment: "bg-white/[0.03] text-white/50 border-white/5",
-  custom: "bg-white/[0.05] text-white/70 border-white/10",
+  id: "bg-white/5 text-white/70 border-white/10",
+  comment: "bg-white/3 text-white/50 border-white/5",
+  custom: "bg-white/5 text-white/70 border-white/10",
 };
 
 export function FieldRow({

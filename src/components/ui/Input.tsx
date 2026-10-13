@@ -54,10 +54,10 @@ export const Input = forwardRef<HTMLInputElement, Props>(
         )}
         <div
           className={cn(
-            "transition-app group flex items-center rounded-xl bg-white/[0.04] border",
+            "transition-app group flex items-center rounded-xl bg-white/4 border",
             error
               ? "border-danger/60 focus-within:border-danger"
-              : "border-white/10 focus-within:border-brand-500/70 focus-within:bg-white/[0.06]",
+              : "border-white/10 focus-within:border-brand-500/70 focus-within:bg-white/6",
             "focus-within:shadow-[0_0_0_4px_rgba(12,164,159,0.12)]",
           )}
         >
@@ -69,7 +69,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(
             id={inputId}
             type={effectiveType}
             className={cn(
-              "flex-1 bg-transparent px-3 py-2.5 text-sm placeholder:text-white/30 focus:outline-none",
+              "flex-1 bg-transparent px-3 py-2.5 text-sm placeholder:text-white/30 focus:outline-hidden",
               className,
             )}
             {...props}

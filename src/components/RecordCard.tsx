@@ -90,11 +90,11 @@ export function RecordCard({
       aria-keyshortcuts={canReorder ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
       data-record-id={record.id}
       className={cn(
-        "card-flat hover:border-white/10 hover:bg-white/[0.04] active:bg-white/[0.06] active:scale-[0.995] transition-all duration-300 cursor-pointer select-none touch-none",
+        "card-flat hover:border-white/10 hover:bg-white/4 active:bg-white/6 active:scale-[0.995] transition-all duration-300 cursor-pointer select-none touch-none",
         "w-full flex items-center gap-3 p-3 text-left relative overflow-hidden",
-        isDragging && "opacity-40 border-dashed border-brand-500/40 cursor-grabbing bg-white/[0.01]",
-        isDragTarget && "border-brand-500/70 shadow-[0_0_12px_rgba(12,164,159,0.25)] scale-[1.01] bg-white/[0.06]",
-        selected && "border-brand-500/60 bg-brand-500/[0.08]"
+        isDragging && "opacity-40 border-dashed border-brand-500/40 cursor-grabbing bg-white/1",
+        isDragTarget && "border-brand-500/70 shadow-[0_0_12px_rgba(12,164,159,0.25)] scale-[1.01] bg-white/6",
+        selected && "border-brand-500/60 bg-brand-500/8"
       )}
     >
       {selectable && (
@@ -103,13 +103,13 @@ export function RecordCard({
           checked={selected}
           onChange={() => onSelectToggle?.()}
           onClick={(e) => e.stopPropagation()}
-          className="h-4 w-4 rounded border-white/20 bg-black/40 text-brand-500 focus:ring-brand-500 shrink-0 cursor-pointer"
+          className="h-4 w-4 rounded-sm border-white/20 bg-black/40 text-brand-500 focus:ring-brand-500 shrink-0 cursor-pointer"
         />
       )}
       <div
         className={cn(
           "h-11 w-11 shrink-0 rounded-xl flex items-center justify-center text-base font-medium pointer-events-none",
-          "bg-gradient-to-br from-brand-500/20 to-brand-700/20 border border-white/5 text-white",
+          "bg-linear-to-br from-brand-500/20 to-brand-700/20 border border-white/5 text-white",
         )}
         style={((c) =>
           c ? { background: `${c}33`, borderColor: `${c}55` } : undefined)(

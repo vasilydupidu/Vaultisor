@@ -171,7 +171,7 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
             setAlnum((v) => !v);
             setPin("");
           }}
-          className="absolute top-[12px] right-[54px] z-50 px-2 py-[2px] border border-white/15 rounded bg-white/6 hover:bg-white/12 text-white/55 hover:text-white/85 text-[11px] font-semibold tracking-wider transition-all leading-[1.6] cursor-pointer"
+          className="absolute top-[12px] right-[54px] z-50 px-2 py-[2px] border border-white/15 rounded-sm bg-white/6 hover:bg-white/12 text-white/55 hover:text-white/85 text-[11px] font-semibold tracking-wider transition-all leading-[1.6] cursor-pointer"
           title={alnum ? t('lock.pinModeDigits') : t('lock.pinModeAlnum')}
         >
           {alnum ? "ABC" : "123"}

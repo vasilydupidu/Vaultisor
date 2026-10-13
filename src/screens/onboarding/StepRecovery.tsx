@@ -138,7 +138,7 @@ export function StepRecovery({ createdShares, onCreate, onComplete }: Props) {
     return (
       <div className="h-full flex flex-col">
         <div className="flex-1 overflow-y-auto min-h-0 space-y-3">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-danger" />
             <h2 className="text-base font-medium text-danger">
               {t("stepRecovery.failedTitle")}

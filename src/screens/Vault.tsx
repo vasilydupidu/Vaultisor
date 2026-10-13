@@ -228,7 +228,7 @@ export function VaultScreen({ onLock }: Props) {
   return (
     <div className="h-full flex flex-col">
       {/* Top bar */}
-      <header className="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-white/[0.05]">
+      <header className="px-4 pt-3 pb-2 flex items-center gap-2 border-b border-white/5">
         <BrandLogo size={28} />
         <span className="text-sm font-medium tracking-tight ml-1 mr-auto">Vaultisor</span>
         <IconButton
@@ -274,14 +274,14 @@ export function VaultScreen({ onLock }: Props) {
       )}
 
       {/* Partition Tabs */}
-      <div className="px-4 py-2 flex border-b border-white/[0.05] bg-white/[0.01] gap-1.5">
+      <div className="px-4 py-2 flex border-b border-white/5 bg-white/1 gap-1.5">
         <button
           type="button"
           onClick={() => switchDb("records")}
           className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-300 ${
             dbType === "records"
               ? "bg-brand-500/15 text-brand-300 border-brand-500/40 shadow-[0_2px_12px_rgba(12,164,159,0.15)]"
-              : "bg-white/[0.01] text-white/45 border-white/[0.04] hover:bg-white/[0.04] hover:text-white/80"
+              : "bg-white/1 text-white/45 border-white/4 hover:bg-white/4 hover:text-white/80"
           }`}
         >
           {t('vault.tabProjects')}
@@ -292,7 +292,7 @@ export function VaultScreen({ onLock }: Props) {
           className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-300 ${
             dbType === "web"
               ? "bg-brand-500/15 text-brand-300 border-brand-500/40 shadow-[0_2px_12px_rgba(12,164,159,0.15)]"
-              : "bg-white/[0.01] text-white/45 border-white/[0.04] hover:bg-white/[0.04] hover:text-white/80"
+              : "bg-white/1 text-white/45 border-white/4 hover:bg-white/4 hover:text-white/80"
           }`}
         >
           {t('vault.tabWeb')}
@@ -315,7 +315,7 @@ export function VaultScreen({ onLock }: Props) {
       </div>
 
       {/* Category Tabs */}
-      <div className="px-4 py-1.5 flex items-center gap-1.5 border-b border-white/[0.03] bg-white/[0.01]">
+      <div className="px-4 py-1.5 flex items-center gap-1.5 border-b border-white/3 bg-white/1">
         {(["all", "work", "personal"] as const).map((cat) => {
           const active = selectedCategory === cat;
           const isOver = dragOverTab === cat;
@@ -338,7 +338,7 @@ export function VaultScreen({ onLock }: Props) {
                   ? "bg-brand-500/25 text-brand-200 border-brand-400 scale-[1.05] shadow-[0_0_15px_rgba(12,164,159,0.4)]"
                   : active
                   ? "bg-brand-500/15 text-brand-300 border-brand-500/40 shadow-[0_2px_12px_rgba(12,164,159,0.15)]"
-                  : "bg-white/[0.01] text-white/45 border-white/[0.04] hover:bg-white/[0.04] hover:text-white/80"
+                  : "bg-white/1 text-white/45 border-white/4 hover:bg-white/4 hover:text-white/80"
               }`}
             >
               {label}

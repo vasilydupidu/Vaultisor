@@ -37,7 +37,7 @@ export function OptionList({
             "px-2 py-1.5 rounded-lg text-xs transition-app text-center",
             value === o.v
               ? "bg-brand-500/15 text-brand-300 border border-brand-500/30"
-              : "bg-white/[0.03] text-white/70 border border-white/[0.08] hover:bg-white/[0.06]",
+              : "bg-white/3 text-white/70 border border-white/8 hover:bg-white/6",
           )}
         >
           {o.l}
@@ -112,11 +112,11 @@ export function CustomMinutesInput({
           }
         }}
         className={cn(
-          "flex-1 min-w-0 bg-white/[0.04] border rounded-lg px-2.5 py-1.5 text-xs text-white",
-          "focus:outline-none focus:border-brand-500/60",
+          "flex-1 min-w-0 bg-white/4 border rounded-lg px-2.5 py-1.5 text-xs text-white",
+          "focus:outline-hidden focus:border-brand-500/60",
           !isPreset && text
             ? "border-brand-500/40"
-            : "border-white/[0.08]",
+            : "border-white/8",
         )}
       />
     </div>

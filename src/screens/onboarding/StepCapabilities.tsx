@@ -120,7 +120,7 @@ function StateIcon({ state }: { state: Row["state"] }) {
     "h-7 w-7 shrink-0 rounded-lg flex items-center justify-center [&_svg]:h-3.5 [&_svg]:w-3.5",
     state === "ok" && "bg-success/15 text-success",
     state === "missing" && "bg-warning/15 text-warning",
-    state === "info" && "bg-white/[0.06] text-white/50",
+    state === "info" && "bg-white/6 text-white/50",
   );
   return (
     <div className={cls}>

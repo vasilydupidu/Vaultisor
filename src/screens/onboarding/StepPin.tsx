@@ -121,7 +121,7 @@ export function StepPin({ value, onChange, onNext, tpmAvailable }: Props) {
                 value={stage === "create" ? value : confirm}
                 onChange={(e) => (stage === "create" ? onChange(e.target.value) : setConfirm(e.target.value))}
                 placeholder={stage === "create" ? t("stepPin.passPlaceholder") : t("stepPin.passConfirmPlaceholder")}
-                className="w-full bg-white/[0.04] border border-white/[0.08] focus:border-brand-500 rounded-lg py-2 px-3 text-sm text-white focus:outline-none transition-app pr-10"
+                className="w-full bg-white/4 border border-white/8 focus:border-brand-500 rounded-lg py-2 px-3 text-sm text-white focus:outline-hidden transition-app pr-10"
               />
               <button
                 type="button"
@@ -145,7 +145,7 @@ export function StepPin({ value, onChange, onNext, tpmAvailable }: Props) {
                 {value.length > 0 && (
                   <span
                     className={cn(
-                      "text-2xs px-2 py-0.5 rounded font-medium",
+                      "text-2xs px-2 py-0.5 rounded-sm font-medium",
                       value.length < 15 ? "bg-danger/10 text-danger" : "bg-success/15 text-success"
                     )}
                   >
@@ -232,7 +232,7 @@ export function StepPin({ value, onChange, onNext, tpmAvailable }: Props) {
                 onClick={() => alnumInputRef.current?.focus()}
                 placeholder={stage === "create" ? t("stepPin.alnumPlaceholder") : t("stepPin.pinConfirmPlaceholder")}
                 autoFocus
-                className="w-full bg-white/[0.04] border border-white/[0.08] focus:border-brand-500 rounded-lg py-2 px-3 text-sm text-white focus:outline-none transition-app pr-10"
+                className="w-full bg-white/4 border border-white/8 focus:border-brand-500 rounded-lg py-2 px-3 text-sm text-white focus:outline-hidden transition-app pr-10"
               />
               <button
                 type="button"
@@ -265,7 +265,7 @@ export function StepPin({ value, onChange, onNext, tpmAvailable }: Props) {
         )}
 
         {error && (
-          <div className={cn("mt-1 text-xs text-danger animate-fade-in")}>{error}</div>
+          <div className="text-xs text-danger animate-fade-in">{error}</div>
         )}
       </div>
 

@@ -1,12 +1,13 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 
 /**
  * Единый источник правды для Content-Security-Policy.
  *
- * AUDIT 3.1.1: политика жила в двух местах — в tauri.conf.json и отдельной
+ * Раньше политика жила в двух местах — в tauri.conf.json и отдельной
  * копией в index.html. Копии разошлись (в meta не было `'self'` и
  * `tauri.localhost` в connect-src), а в dev-режиме meta-политика блокировала
  * inline-preamble React Refresh и WebSocket HMR. Теперь production-сборка
@@ -37,7 +38,7 @@ function cspPlugin(isDev: boolean): Plugin {
 // Конфигурация Vite для Tauri.
 // Tauri ожидает frontendDist по пути dist/ и dev-server на 1420.
 export default defineConfig(async ({ command }) => ({
-  plugins: [react(), cspPlugin(command === "serve")],
+  plugins: [react(), tailwindcss(), cspPlugin(command === "serve")],
 
   resolve: {
     alias: {

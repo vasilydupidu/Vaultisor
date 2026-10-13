@@ -137,7 +137,7 @@ export function PinKeypad({
                   "h-9 w-6 rounded-md flex items-center justify-center text-base font-mono shrink-0",
                   i < value.length
                     ? "bg-white/10 text-white"
-                    : "bg-white/[0.03] text-white/20",
+                    : "bg-white/3 text-white/20",
                 )}
               >
                 {value[i] ?? ""}
@@ -163,7 +163,7 @@ export function PinKeypad({
               type="button"
               onClick={() => press(d)}
               disabled={disabled}
-              className="h-14 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.10] active:scale-[0.96] transition-app text-white text-xl font-light flex items-center justify-center"
+              className="h-14 rounded-2xl bg-white/3 hover:bg-white/[0.07] active:bg-white/10 active:scale-[0.96] transition-app text-white text-xl font-light flex items-center justify-center"
             >
               {d}
             </button>
@@ -175,7 +175,7 @@ export function PinKeypad({
           aria-label={t('pinKeypad.erase')}
           onClick={() => press("back")}
           disabled={disabled || value.length === 0}
-          className="h-14 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] active:bg-white/[0.10] active:scale-[0.96] transition-app text-white/70 flex items-center justify-center disabled:opacity-40"
+          className="h-14 rounded-2xl bg-white/3 hover:bg-white/[0.07] active:bg-white/10 active:scale-[0.96] transition-app text-white/70 flex items-center justify-center disabled:opacity-40"
         >
           <Delete className="h-5 w-5" />
         </button>

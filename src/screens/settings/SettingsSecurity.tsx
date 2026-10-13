@@ -224,7 +224,7 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
           {t("settingsSecurity.helloHint")}
         </p>
         {s.use_windows_hello && (
-          <p className="text-2xs text-danger font-medium leading-snug mt-1">
+          <p className="text-2xs text-danger font-medium leading-snug">
             {t("settingsSecurity.helloKeyWarning")}
           </p>
         )}
@@ -265,14 +265,13 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
       </Section>
 
       <Section title={t("settingsSecurity.fido2Title")}>
-        <p className="text-2xs text-white/55 mb-2 leading-snug">
+        <p className="text-2xs text-white/55 leading-snug mb-5">
           {t("settingsSecurity.fido2Desc")}
         </p>
         <Button
           variant="secondary"
           size="sm"
           fullWidth
-          className="mb-3"
           onClick={async () => {
             try {
               await apiOpenSecurityKeySettings();
@@ -285,14 +284,14 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
         </Button>
 
         {keysList.length > 0 && (
-          <div className="mb-3 space-y-2">
+          <div className="space-y-2">
             <div className="text-2xs font-semibold text-white/40 uppercase tracking-wider">
               {t("settingsSecurity.fido2KeysListTitle", { count: keysList.length })}
             </div>
             {keysList.map((key) => (
               <div
                 key={key.id}
-                className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08]"
+                className="flex items-center justify-between p-2.5 rounded-lg bg-white/4 border border-white/8"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center shrink-0">
@@ -331,7 +330,7 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
 
         {/* Modal/Box подтверждения удаления */}
         {confirmDeleteKey && (
-          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 space-y-3 mb-3">
+          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 space-y-3">
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
               <div className="min-w-0">
@@ -365,7 +364,7 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
         )}
 
         {addingKey ? (
-          <div className="p-3 rounded-lg bg-white/[0.04] border border-indigo-500/30 space-y-3 mb-2">
+          <div className="p-3 rounded-lg bg-white/4 border border-indigo-500/30 space-y-3">
             <div className="text-xs text-white/80 font-medium">
               {t("settingsSecurity.fido2KeyNamePrompt")}
             </div>
@@ -375,14 +374,14 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
               placeholder={t("settingsSecurity.fido2KeyNamePlaceholder")}
               autoFocus
             />
-            <div className="flex gap-2 mt-2">
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setRequirePin(true)}
                 className={`flex-1 p-2 rounded-lg border text-xs text-center transition-all ${
                   requirePin
                     ? 'bg-indigo-500/15 border-indigo-500/50 text-indigo-200'
-                    : 'bg-white/[0.03] border-white/[0.1] text-white/50 hover:border-white/20'
+                    : 'bg-white/3 border-white/10 text-white/50 hover:border-white/20'
                 }`}
               >
                 <Shield className="w-4 h-4 mx-auto mb-1" />
@@ -395,7 +394,7 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
                 className={`flex-1 p-2 rounded-lg border text-xs text-center transition-all ${
                   !requirePin
                     ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-200'
-                    : 'bg-white/[0.03] border-white/[0.1] text-white/50 hover:border-white/20'
+                    : 'bg-white/3 border-white/10 text-white/50 hover:border-white/20'
                 }`}
               >
                 <Fingerprint className="w-4 h-4 mx-auto mb-1" />
@@ -450,7 +449,7 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
           checked={healthCheck}
           onChange={handleToggleHealthCheck}
         />
-        <div className="pt-2 border-t border-white/[0.06]">
+        <div className="pt-2 border-t border-white/6">
           <ToggleRow
             title={t("settingsSecurity.passwordHistoryTitle")}
             description={t("settingsSecurity.passwordHistoryDesc")}
@@ -458,7 +457,7 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
             onChange={handleTogglePasswordHistory}
           />
         </div>
-        <div className="pt-2 border-t border-white/[0.06]">
+        <div className="pt-2 border-t border-white/6">
           <ToggleRow
             title={t("settingsGenerator.title")}
             description={t("settingsGenerator.desc")}

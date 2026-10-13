@@ -16,9 +16,9 @@ const sizeMap = {
 };
 
 const variantMap = {
-  default: "text-white/80 hover:text-white hover:bg-white/[0.06]",
-  subtle: "text-white/55 hover:text-white hover:bg-white/[0.04]",
-  filled: "bg-white/[0.06] text-white hover:bg-white/[0.10]",
+  default: "text-white/80 hover:text-white hover:bg-white/6",
+  subtle: "text-white/55 hover:text-white hover:bg-white/4",
+  filled: "bg-white/6 text-white hover:bg-white/10",
   danger: "text-danger/85 hover:text-white hover:bg-danger/30",
 };
 

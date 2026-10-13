@@ -284,7 +284,7 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
 
   return (
     <div className="h-full flex flex-col">
-      <header className="px-4 pt-3 pb-2 flex items-center gap-1 border-b border-white/[0.05]">
+      <header className="px-4 pt-3 pb-2 flex items-center gap-1 border-b border-white/5">
         <IconButton
           icon={<ChevronLeft />}
           aria-label={t('common.cancel')}
@@ -332,7 +332,7 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
                     className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border text-center transition-all duration-300 ${
                       active
                         ? "bg-brand-500/15 text-brand-300 border-brand-500/40"
-                        : "bg-white/[0.01] text-white/45 border-white/[0.04] hover:bg-white/[0.04] hover:text-white/80"
+                        : "bg-white/1 text-white/45 border-white/4 hover:bg-white/4 hover:text-white/80"
                     }`}
                   >
                     {label}
@@ -363,7 +363,7 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
                         "text-2xs px-2 py-1 rounded-md border transition-app",
                         f.is_secret
                           ? "bg-brand-500/15 text-brand-300 border-brand-500/20"
-                          : "bg-white/[0.04] text-white/50 border-white/10",
+                          : "bg-white/4 text-white/50 border-white/10",
                       )}
                     >
                       {f.is_secret ? t('recordEdit.secretType') : t('recordEdit.publicType')}
@@ -391,7 +391,7 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
                 <button
                   type="button"
                   onClick={() => revealField(f.uid)}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white/[0.04] border border-white/10 text-sm hover:bg-white/[0.06] transition-app"
+                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white/4 border border-white/10 text-sm hover:bg-white/6 transition-app"
                 >
                   <span className="tracking-widest text-white/60">••••••••</span>
                   <span className="text-2xs text-brand-300">{t('recordEdit.revealChange')}</span>
@@ -443,7 +443,7 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
               key={ft}
               type="button"
               onClick={() => addField(ft)}
-              className="card-flat py-3 px-2 text-sm text-white hover:bg-white/[0.06] transition-app"
+              className="card-flat py-3 px-2 text-sm text-white hover:bg-white/6 transition-app"
             >
               {t(`fieldTypes.${ft}`)}
             </button>
@@ -474,7 +474,7 @@ function FieldTypeBadge({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as FieldType)}
-      className="bg-white/[0.04] border border-white/10 rounded-md text-2xs text-white px-2 py-1 focus:outline-none focus:border-brand-500/60"
+      className="bg-white/4 border border-white/10 rounded-md text-2xs text-white px-2 py-1 focus:outline-hidden focus:border-brand-500/60"
     >
       {allFieldTypes.map((t) => (
         <option key={t} value={t} className="bg-ink-900">

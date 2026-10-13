@@ -143,7 +143,7 @@ export function RecordView({
 
   return (
     <div className="h-full flex flex-col">
-      <header className="px-4 pt-3 pb-2 flex items-center gap-1 border-b border-white/[0.05]">
+      <header className="px-4 pt-3 pb-2 flex items-center gap-1 border-b border-white/5">
         <IconButton
           icon={<ChevronLeft />}
           aria-label={t('common.back')}
@@ -327,7 +327,7 @@ function PasswordHistorySection({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="w-full mt-2 card-flat p-3 flex items-center justify-between text-xs text-white/60 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
+        className="w-full mt-2 card-flat p-3 flex items-center justify-between text-xs text-white/60 hover:text-white/90 hover:bg-white/4 transition-colors"
       >
         <span className="flex items-center gap-2 font-medium">
           📜 {t('recordView.historyTitle')}
@@ -339,7 +339,7 @@ function PasswordHistorySection({
 
   return (
     <div className="mt-2 card-flat p-3 space-y-2.5">
-      <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
+      <div className="flex items-center justify-between border-b border-white/6 pb-2">
         <span className="text-xs font-semibold text-white/85 flex items-center gap-1.5">
           📜 {t('recordView.historyTitle')} ({history.length})
         </span>
@@ -375,7 +375,7 @@ function PasswordHistorySection({
           {history.map((h) => (
             <div
               key={h.id}
-              className="bg-black/20 border border-white/[0.05] rounded-lg p-2.5 flex items-center justify-between gap-2 text-xs"
+              className="bg-black/20 border border-white/5 rounded-lg p-2.5 flex items-center justify-between gap-2 text-xs"
             >
               <div className="min-w-0 flex-1">
                 <div className="text-2xs text-white/40 flex items-center gap-1">
@@ -397,7 +397,7 @@ function PasswordHistorySection({
                       toast.error(sanitizeError(e));
                     }
                   }}
-                  className="p-1.5 rounded hover:bg-white/10 text-white/70 hover:text-white text-2xs"
+                  className="p-1.5 rounded-sm hover:bg-white/10 text-white/70 hover:text-white text-2xs"
                 >
                   📋
                 </button>
@@ -416,7 +416,7 @@ function PasswordHistorySection({
                       toast.error(sanitizeError(e));
                     }
                   }}
-                  className="px-2 py-1 bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 text-2xs font-medium rounded"
+                  className="px-2 py-1 bg-brand-500/20 hover:bg-brand-500/30 text-brand-300 text-2xs font-medium rounded-sm"
                 >
                   {t('recordView.historyRestore')}
                 </button>

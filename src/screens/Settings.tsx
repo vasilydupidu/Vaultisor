@@ -99,7 +99,7 @@ export function Settings({ onClose, onSettingsChanged, onGeneratorChanged }: Pro
 
   return (
     <div className="h-full flex flex-col">
-      <header className="px-4 pt-3 pb-2 flex items-center gap-1 border-b border-white/[0.05] shrink-0">
+      <header className="px-4 pt-3 pb-2 flex items-center gap-1 border-b border-white/5 shrink-0">
         <IconButton
           icon={<ChevronLeft />}
           aria-label={t('common.close')}
@@ -146,7 +146,7 @@ export function Settings({ onClose, onSettingsChanged, onGeneratorChanged }: Pro
         <SettingsBackup />
 
         <Section title={t('settings.languageTitle')}>
-          <p className="text-2xs text-white/55 mb-2">{t('settings.languageDesc')}</p>
+          <p className="text-2xs text-white/55">{t('settings.languageDesc')}</p>
           <div className="grid grid-cols-2 gap-1.5">
             {[
               { id: 'ru', label: t('settings.languageRu') },
@@ -165,7 +165,7 @@ export function Settings({ onClose, onSettingsChanged, onGeneratorChanged }: Pro
                   "px-2 py-1.5 rounded-lg text-xs transition-app text-center font-medium",
                   (i18n.language === o.id || (o.id === 'ru' && !['ru', 'en'].includes(i18n.language)))
                     ? "bg-brand-500/15 text-brand-300 border border-brand-500/30"
-                    : "bg-white/[0.03] text-white/70 border border-white/[0.08] hover:bg-white/[0.06]"
+                    : "bg-white/3 text-white/70 border border-white/8 hover:bg-white/6"
                 )}
               >
                 {o.label}

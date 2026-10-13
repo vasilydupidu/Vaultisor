@@ -95,7 +95,7 @@ export function Sheet({
   );
 
   const panelCls = cn(
-    "card-elevated bg-ink-900/95 backdrop-blur-xl text-white animate-fade-in-up relative outline-none",
+    "card-elevated bg-ink-900/95 backdrop-blur-xl text-white animate-fade-in-up relative outline-hidden",
     position === "bottom" && "w-full rounded-t-3xl rounded-b-none max-h-[85vh] overflow-y-auto",
     position === "modal" && "w-full max-w-md rounded-2xl max-h-[85vh] overflow-y-auto",
     position === "full" && "w-full h-full rounded-none flex flex-col",

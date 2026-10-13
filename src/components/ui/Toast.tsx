@@ -65,7 +65,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {/* Toast-стак рендерится сверху по центру, поверх любых sheets/modal'ов
           через высокий z-index. Это гарантирует видимость над окнами Hello-prompt
           и системными подсказками, которые перекрывают нижнюю часть экрана. */}
-      <div className="fixed top-2 left-1/2 z-[1000] -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none max-w-[360px] w-full px-2">
+      <div className="fixed top-2 left-1/2 z-1000 -translate-x-1/2 flex flex-col items-center gap-1.5 pointer-events-none max-w-[360px] w-full px-2">
         {items.map((t) => (
           <ToastView key={t.id} item={t} onClose={remove} />
         ))}
@@ -105,7 +105,7 @@ function ToastView({
       )}
     >
       <Icon className={cn("h-4 w-4 shrink-0 mt-0.5", color)} />
-      <div className="text-xs font-medium text-white/90 flex-1 leading-snug break-words">{item.message}</div>
+      <div className="text-xs font-medium text-white/90 flex-1 leading-snug wrap-break-word">{item.message}</div>
       <button
         onClick={() => onClose(item.id)}
         aria-label={t('common.close')}

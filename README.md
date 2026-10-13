@@ -118,7 +118,7 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
 - **Backend**: Rust (toolchain зафиксирован в `rust-toolchain.toml`), Tauri 2,
   SQLCipher 4, AES-256-GCM, Argon2id, HKDF-SHA256, P-256 (ES256), Windows
   CNG / TPM Platform KSP, DPAPI, `webauthn.dll`.
-- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, i18next.
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS 4, i18next.
 
 ### 📦 Сборка из исходников
 
@@ -254,7 +254,7 @@ restore and import; a "build → immutable artifact → publish" release pipelin
 - **Backend**: Rust (toolchain pinned in `rust-toolchain.toml`), Tauri 2,
   SQLCipher 4, AES-256-GCM, Argon2id, HKDF-SHA256, P-256 (ES256), Windows
   CNG / TPM Platform KSP, DPAPI, `webauthn.dll`.
-- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, i18next.
+- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS 4, i18next.
 
 ### 📦 Building from source
 

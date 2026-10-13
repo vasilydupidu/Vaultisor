@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#0CA49F" />
     <!-- Статический CSP как defense-in-depth, если HTML открыт вне Tauri.
-         AUDIT 3.1.1: политика больше не дублируется вручную — Vite подставляет
+         Политика не дублируется вручную — Vite подставляет
          сюда строку из src-tauri/tauri.conf.json при production-сборке и
          удаляет тег в dev-режиме, где Vite нужен inline-preamble React Refresh
          и WebSocket для HMR. Раньше расхождение двух копий политики молча

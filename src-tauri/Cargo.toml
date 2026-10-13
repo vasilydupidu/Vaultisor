@@ -19,7 +19,7 @@ tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
 # === Tauri core ===
-# AUDIT M12: `devtools` УБРАН из релизных фич — иначе инспектор WebView
+# `devtools` не входит в релизные фичи — иначе инспектор WebView
 # компилировался в прод-бинарник (CWE-489). Для отладки: сборка с
 # `--features devtools` (см. [features] ниже).
 tauri = { version = "2.1", features = ["tray-icon"] }

@@ -166,7 +166,7 @@ export function SettingsBackup() {
         {t('settingsBackup.desc')}
       </p>
 
-      <div className="text-2xs text-white/70 mt-1">
+      <div className="text-2xs text-white/70">
         <strong>{t('settingsBackup.dirLabel')}</strong>{" "}
         <span className="break-all">{backupCfg?.dir || t('settingsBackup.notSelected')}</span>
       </div>
@@ -180,7 +180,7 @@ export function SettingsBackup() {
         {backupCfg?.dir ? t('settingsBackup.changeDir') : t('settingsBackup.selectDir')}
       </Button>
 
-      <div className="grid grid-cols-3 gap-1.5 mt-1">
+      <div className="grid grid-cols-3 gap-1.5">
         {[
           { v: "off", l: t('settingsBackup.freqManual') },
           { v: "daily", l: t('settingsBackup.freqDaily') },
@@ -196,7 +196,7 @@ export function SettingsBackup() {
                 "px-2 py-1.5 rounded-lg text-xs transition-app text-center border",
                 active
                   ? "bg-brand-500/15 text-brand-300 border-brand-500/40"
-                  : "bg-white/[0.02] text-white/55 border-white/[0.06] hover:bg-white/[0.05]",
+                  : "bg-white/2 text-white/55 border-white/6 hover:bg-white/5",
               )}
             >
               {o.l}
@@ -217,7 +217,7 @@ export function SettingsBackup() {
         {t('settingsBackup.scheduleHint')}
       </p>
 
-      <div className="border-t border-white/[0.06] my-1" />
+      <div className="border-t border-white/6" />
       <p className="text-2xs text-white/50 leading-snug">
         <strong>{t('settingsBackup.exportTitle')}</strong>{" "}
         {t('settingsBackup.exportDesc')}
@@ -241,7 +241,7 @@ export function SettingsBackup() {
         {t('settingsBackup.exportBtn')}
       </Button>
 
-      <div className="border-t border-white/[0.06] my-1" />
+      <div className="border-t border-white/6" />
       <p className="text-2xs text-white/50 leading-snug">
         <strong>{t('settingsBackup.importBrowserTitle')}</strong>{" "}
         {t('settingsBackup.importBrowserDesc')}
@@ -257,7 +257,7 @@ export function SettingsBackup() {
       </Button>
 
       {importedDeletionToken && (
-        <div className="card-flat p-3 space-y-2 border-warning/40 bg-warning/5 animate-fade-in mt-1">
+        <div className="card-flat p-3 space-y-2 border-warning/40 bg-warning/5 animate-fade-in">
           <div className="text-xs font-medium text-warning flex items-center gap-1.5">
             <FileText className="h-3.5 w-3.5" />
             {t('settingsBackup.deleteCsvTitle')}
@@ -288,7 +288,7 @@ export function SettingsBackup() {
       )}
 
       {rejectedRows.length > 0 && (
-        <div className="card-flat p-3 space-y-1.5 border-danger/40 bg-danger/5 animate-fade-in mt-1">
+        <div className="card-flat p-3 space-y-1.5 border-danger/40 bg-danger/5 animate-fade-in">
           <div className="text-xs font-medium text-danger">
             {t('settingsBackup.rejectedTitle', { count: rejectedRows.length })}
           </div>
@@ -308,7 +308,7 @@ export function SettingsBackup() {
         </Button>
       )}
 
-      <div className="border-t border-white/[0.06] my-1" />
+      <div className="border-t border-white/6" />
       <p className="text-2xs text-white/50 leading-snug">
         <strong>{t('settingsBackup.restoreTitle')}</strong>{" "}
         <Trans i18nKey="settingsBackup.restoreDesc" components={{ code: <code /> }} />
@@ -324,7 +324,7 @@ export function SettingsBackup() {
       </Button>
 
       {confirmRestore && (
-        <div className="card-flat p-3 space-y-2 border-warning/40 bg-warning/5 animate-fade-in mt-1">
+        <div className="card-flat p-3 space-y-2 border-warning/40 bg-warning/5 animate-fade-in">
           <div className="text-xs font-medium text-warning flex items-center gap-1.5">
             <AlertTriangle className="h-3.5 w-3.5" />
             {t('settingsBackup.restoreConfirmTitle')}

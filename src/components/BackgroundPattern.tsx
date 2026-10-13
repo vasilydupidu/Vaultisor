@@ -12,7 +12,7 @@ export function BackgroundPattern({ opacity = 0.5 }: { opacity?: number }) {
     >
       {/* Большие вспышки света */}
       <div className="absolute -top-40 left-1/2 -translate-x-1/2 h-[420px] w-[420px] rounded-full bg-brand-500/15 blur-3xl" />
-      <div className="absolute bottom-[-180px] right-[-100px] h-[300px] w-[300px] rounded-full bg-accent-400/[0.06] blur-3xl" />
+      <div className="absolute bottom-[-180px] right-[-100px] h-[300px] w-[300px] rounded-full bg-accent-400/6 blur-3xl" />
       {/* Сетка */}
       <div className="absolute inset-0 bg-dots" />
       {/* Тонкие концентрические дуги */}

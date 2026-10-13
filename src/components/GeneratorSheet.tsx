@@ -70,7 +70,7 @@ export function GeneratorSheet({
                 "px-2 py-1.5 rounded-lg text-2xs border text-center transition-app",
                 charset === c
                   ? "bg-brand-500/15 text-brand-300 border-brand-500/30"
-                  : "bg-white/[0.03] text-white/70 border-white/[0.08] hover:bg-white/[0.06]",
+                  : "bg-white/3 text-white/70 border-white/8 hover:bg-white/6",
               )}
             >
               {CHARSET_LABELS[c]}
