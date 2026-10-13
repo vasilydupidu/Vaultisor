@@ -55,7 +55,7 @@
 
 ## Инфраструктура
 
-- Публичный репозиторий: provenance-attestation релизов, secret scanning
-  с push protection, private vulnerability reporting, ruleset для `main`
-  и тегов `v*`.
+- Сделано при публикации репозитория: provenance-attestation релизов
+  (обязательна), secret scanning с push protection, private vulnerability
+  reporting, ruleset для `main` и тегов `v*`.
 - CI и релиз по-прежнему запускаются вручную (`docs/SDLC.md`, раздел 4).

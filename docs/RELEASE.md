@@ -6,9 +6,8 @@
 
 ## 🚀 Как выпустить новый релиз
 
-Автоматических запусков CI нет: GitHub Actions в репозитории выключены и
-включаются только на время ручного прогона ([`docs/SDLC.md`](./SDLC.md),
-раздел 4, «Запуск»).
+Автоматических запусков CI нет: workflows стартуют только вручную
+([`docs/SDLC.md`](./SDLC.md), раздел 4, «Запуск»).
 
 ### Шаг 1. Обновить версию и документы
 Версия (например, `5.1.0`) указывается в `package.json`, `src-tauri/Cargo.toml`
@@ -25,10 +24,8 @@
 ```bash
 git tag -a v5.1.0 -m "Vaultisor v5.1.0"
 git push origin v5.1.0
-gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=true -f allowed_actions=all
 gh workflow run release.yml --ref v5.1.0 -f publish=true
 gh run watch
-gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=false
 ```
 
 Пуш тега сам ничего не запускает. Тег обязан совпадать с версией в
@@ -36,13 +33,14 @@ gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=false
 останавливает сборку. Без `publish=true` тот же workflow — пробная сборка:
 проверки и артефакт run'а, без релиза.
 Дальше `release.yml`: `checks` → `build` (неизменяемый артефакт) → `attest`
-(только для публичного репозитория) → `publish` (проверка хэша и публикация
+(provenance через Sigstore) → `publish` (проверка хэша и публикация
 того же артефакта на [GitHub Releases](https://github.com/vasilydupidu/Vaultisor/releases)).
 Устройство pipeline — в [`docs/SDLC.md`](./SDLC.md), раздел 5.
 
 Публичный Windows-бинарник выпускается без Authenticode-подписи. Перед запуском
-проверяйте SHA-256 по файлу `SHA256SUMS.txt`; сведения о сборке (коммит,
-версии rustc и Node) — в `build-info.json`.
+проверяйте SHA-256 по файлу `SHA256SUMS.txt` и происхождение сборки:
+`gh attestation verify Vaultisor-<версия>.exe --repo vasilydupidu/Vaultisor`. Сведения о сборке (коммит, версии rustc и Node) —
+в `build-info.json`.
 
 ### Гейты перед публикацией
 

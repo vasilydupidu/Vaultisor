@@ -151,7 +151,8 @@ Checkpoint намеренно лежит вне папки хранилища: �
   — перед релизом и после обновления зависимостей. CI автоматически не
   запускается: проверки прогоняются локально и вручную в GitHub Actions.
 - Бинарник **не подписан** Authenticode. Проверяйте SHA-256 по
-  `SHA256SUMS.txt` из релиза.
+  `SHA256SUMS.txt` из релиза и provenance сборки:
+  `gh attestation verify Vaultisor-<версия>.exe --repo vasilydupidu/Vaultisor`.
 
 ---
 
@@ -298,4 +299,5 @@ share recovery.
   run before every release and after dependency updates. CI never runs
   automatically: checks run locally and, on demand, in GitHub Actions.
 - The binary is **not** Authenticode-signed. Verify its SHA-256 against
-  `SHA256SUMS.txt` from the release.
+  `SHA256SUMS.txt` from the release and its build provenance:
+  `gh attestation verify Vaultisor-<version>.exe --repo vasilydupidu/Vaultisor`.

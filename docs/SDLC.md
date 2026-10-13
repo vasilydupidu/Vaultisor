@@ -148,17 +148,19 @@ memory-hard, и на раннере с большим числом ядер па
 ### Запуск
 
 Автоматических запусков нет: push, PR и расписание workflows не запускают.
-Репозиторий служит хранилищем версий, а GitHub Actions в нём выключены
-и включаются только на время ручного прогона:
+Каждый workflow стартует только вручную:
 
 ```bash
-gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=true -f allowed_actions=all
 gh workflow run ci.yml          # полный CI
 gh workflow run audit.yml       # cargo-deny + npm audit
 gh workflow run release.yml     # пробная релизная сборка без публикации
 gh run watch
-gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=false
 ```
+
+Настройки репозитория: Actions принимаются только закреплёнными по SHA
+(`sha_pinning_required`), токен workflow по умолчанию только читает, запуск
+из PR внешних участников ждёт одобрения. Ruleset запрещает удалять `main`
+и переписывать его force-push'ем, а теги `v*` — удалять и переставлять.
 
 Основная проверка — локальные гейты из раздела 3; `cargo deny` и `npm audit`
 стоит прогонять перед каждым релизом и после обновления зависимостей.
@@ -218,7 +220,7 @@ checks (ci.yml без кэша) → build → [attest] → publish
 |-----|--------------|------------|
 | `checks` | `contents: read` | полный CI; кэш сборки отключён, чтобы кэш из другой ветки не попал в релиз |
 | `build` | `contents: read` | при запуске с тега сверяет его с версией, `npm ci`, toolchain из `rust-toolchain.toml`, `build.ps1` (cargo `--locked`), `SHA256SUMS.txt` и `build-info.json`; выкладывает их неизменяемым артефактом run'а |
-| `attest` | `id-token: write`, `attestations: write` | provenance-attestation бинарника. Выполняется только при `publish=true` и только для публичного репозитория: для приватного GitHub выдаёт attestations лишь на Enterprise Cloud |
+| `attest` | `id-token: write`, `attestations: write` | provenance-attestation бинарника (Sigstore), выполняется при `publish=true`. Без неё `publish` не запускается |
 | `publish` | `contents: write` | только при `publish=true`; ничего не собирает: скачивает тот же артефакт, проверяет `sha256sum --check`, создаёт релиз через `gh release create --verify-tag` |
 
 Общие правила всех workflows: `permissions: {}` на уровне файла и явный минимум
@@ -285,8 +287,8 @@ SemVer, где «публичный API» — это **формат данных
 - **Нет Authenticode-подписи.** Бинарь публикуется unsigned, проверка — по
   SHA-256. Сертификат стоит денег и требует HSM; до появления такового
   подписывать нечем.
-- **Нет автоматического CI.** Push, PR и расписание ничего не запускают,
-  GitHub Actions в репозитории выключены. Гейты прогоняются локально, а CI,
+- **Нет автоматического CI.** Push, PR и расписание ничего не запускают.
+  Гейты прогоняются локально, а CI,
   audit и релиз — вручную (раздел 4, «Запуск»). Dependabot не подключён:
   обновления зависимостей и пинов Actions — явное ручное решение.
 - **Нет автообновления.** Апдейтер — это сетевой канал с правом записи в

@@ -69,25 +69,22 @@ actionlint
 zizmor --persona pedantic .github/workflows
 ```
 
-Nothing runs automatically: pushes, PRs and tags trigger no workflow, and
-GitHub Actions stay disabled in the repository between manual runs.
+Nothing runs automatically: pushes, PRs and tags trigger no workflow.
 `.github/workflows/release.yml` is started by hand; without `publish=true` it
 is a dry run (checks + artifact, no release), and `publish=true` requires a tag
 `vX.Y.Z` equal to the `package.json` version:
 
 ```text
 checks (ci.yml, no cache) → build (read-only token, immutable artifact:
-exe + SHA256SUMS.txt + build-info.json) → attest (public repository only)
+exe + SHA256SUMS.txt + build-info.json) → attest (Sigstore provenance, required)
 → publish (contents: write; verifies the artifact's SHA-256, gh release create)
 ```
 
 ```powershell
 git tag -a vX.Y.Z -m "Vaultisor vX.Y.Z"
 git push origin vX.Y.Z
-gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=true -f allowed_actions=all
 gh workflow run release.yml --ref vX.Y.Z -f publish=true
 gh run watch
-gh api -X PUT repos/vasilydupidu/Vaultisor/actions/permissions -F enabled=false
 ```
 
 Do not tag before the hardware smoke test (`docs/SMOKE-TEST-<version>.md`) has

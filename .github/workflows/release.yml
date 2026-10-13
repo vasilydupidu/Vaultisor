@@ -4,8 +4,8 @@ name: Release
 #
 # - build собирает бинарник один раз, без кэшей и с правами только на чтение,
 #   и выкладывает его вместе с SHA256SUMS и build-info как артефакт run'а;
-# - attest (только для публичного репозитория: для приватного GitHub выдаёт
-#   attestations лишь на Enterprise Cloud) подписывает provenance артефакта;
+# - attest подписывает provenance артефакта (Sigstore); без неё релиз
+#   не публикуется;
 # - publish ничего не собирает: скачивает тот же артефакт, сверяет хэши и
 #   публикует. Право на запись в репозиторий есть только у этого job'а.
 #
@@ -135,7 +135,7 @@ jobs:
   attest:
     name: Build provenance attestation
     needs: build
-    if: inputs.publish && github.event.repository.visibility == 'public'
+    if: inputs.publish
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -154,10 +154,7 @@ jobs:
   publish:
     name: Publish GitHub release
     needs: [build, attest]
-    # attest пропускается в приватном репозитории — это не повод не публиковать.
-    if: >-
-      ${{ !cancelled() && inputs.publish && needs.build.result == 'success'
-      && (needs.attest.result == 'success' || needs.attest.result == 'skipped') }}
+    if: inputs.publish
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

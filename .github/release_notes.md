@@ -13,7 +13,7 @@
 - Обнаружение отката баз записей и паролей сайтов.
 - Восстановление по долям и restore из копии переработаны; restore не возвращает старые факторы входа.
 
-Бинарник распространяется без Authenticode-подписи. Перед запуском сверьте SHA-256 с `SHA256SUMS.txt`; сведения о сборке — в `build-info.json`.
+Бинарник распространяется без Authenticode-подписи. Перед запуском сверьте SHA-256 с `SHA256SUMS.txt` и проверьте происхождение сборки: `gh attestation verify Vaultisor-5.1.0.exe --repo vasilydupidu/Vaultisor`. Сведения о сборке — в `build-info.json`.
 
 ### English
 
@@ -26,4 +26,4 @@
 - Rollback detection for the records and website-password databases.
 - Share recovery and backup restore were reworked; restore does not bring back old sign-in factors.
 
-The binary is not Authenticode-signed. Verify its SHA-256 against `SHA256SUMS.txt` before running it; build details are in `build-info.json`.
+The binary is not Authenticode-signed. Before running it, verify its SHA-256 against `SHA256SUMS.txt` and its build provenance: `gh attestation verify Vaultisor-5.1.0.exe --repo vasilydupidu/Vaultisor`. Build details are in `build-info.json`.
