@@ -17,32 +17,16 @@ use crate::error::{Result, VaultError};
 
 const MAGIC: &str = "vaultisor-share-v1";
 
-/// Write a share without following a frontend-controlled overwrite request.
-/// The native save dialog is responsible for an explicit user choice; the
-/// backend then uses create_new so a path swap cannot truncate an existing
-/// file between selection and write.
-pub fn write_share_file_exclusive(path: &Path, share: &Share) -> Result<()> {
+/// Записать долю в файл, выбранный в системном диалоге сохранения.
+///
+/// Существующий файл заменяется: согласие на замену пользователь уже дал в
+/// диалоге, а при перевыпуске долей старый файл и должен смениться — прежнее
+/// поколение недействительно. Замена атомарная (временный файл рядом, fsync,
+/// замена записи каталога), поэтому подмена пути между выбором и записью не
+/// усечёт чужой файл, а сбой оставит старую или новую долю целиком.
+pub fn write_share_file(path: &Path, share: &Share) -> Result<()> {
     let body = format!("{MAGIC}\n{}|{}\n", share.x, hex::encode(&share.y));
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::AlreadyExists {
-                VaultError::BadInput(
-                    "Файл уже существует; выберите новое имя в диалоге сохранения".into(),
-                )
-            } else {
-                VaultError::Io(e)
-            }
-        })?;
-    use std::io::Write;
-    file.write_all(body.as_bytes())?;
-    file.sync_all()?;
-    Ok(())
+    crate::storage::fsio::write_atomic(path, body.as_bytes())
 }
 
 pub fn read_share_file(path: &Path) -> Result<Share> {
@@ -111,21 +95,28 @@ mod tests {
             x: 2,
             y: vec![0xAA, 0xBB, 0xCC, 0xDD],
         };
-        write_share_file_exclusive(&path, &s).unwrap();
+        write_share_file(&path, &s).unwrap();
         let restored = read_share_file(&path).unwrap();
         assert_eq!(restored.x, s.x);
         assert_eq!(restored.y, s.y);
     }
 
     #[test]
-    fn exclusive_write_rejects_replay_or_overwrite() {
+    fn new_generation_replaces_the_old_share_file() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("share.vss");
-        let s = Share {
+        let old = Share {
             x: 2,
             y: vec![1, 2, 3],
         };
-        write_share_file_exclusive(&path, &s).unwrap();
-        assert!(write_share_file_exclusive(&path, &s).is_err());
+        let new = Share {
+            x: 2,
+            y: vec![4, 5, 6],
+        };
+        write_share_file(&path, &old).unwrap();
+        write_share_file(&path, &new).unwrap();
+        assert_eq!(read_share_file(&path).unwrap().y, new.y);
+        let leftovers = std::fs::read_dir(dir.path()).unwrap().count();
+        assert_eq!(leftovers, 1, "временный файл не должен оставаться");
     }
 }

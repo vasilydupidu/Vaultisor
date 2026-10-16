@@ -38,7 +38,7 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
   часов, ни подмена файлов, ни импорт копии задержку не снимают.
 - **Подтверждение PIN для изменений безопасности.** Смена PIN, Windows Hello,
   подтверждение копирования, привязка и отвязка FIDO2, восстановление,
-  restore, экспорт и папка резервных копий требуют свежего ввода PIN (и
+  restore и папка резервных копий требуют свежего ввода PIN (и
   Hello, если включён). Открытой сессии недостаточно.
 - **Защита от отката и подмены.** Метаданные подписаны HMAC; внешний
   checkpoint в профиле пользователя фиксирует их версию, задержки PIN,
@@ -75,9 +75,9 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
 - **Восстановление по долям** заново создаёт ключи устройства (TPM-ключ,
   энтропию DPAPI, ключ целостности) одной операцией и задаёт новый PIN;
   Windows Hello и FIDO2 после него привязываются заново.
-- **Резервные копии** (`.vault`, опционально с паролем: Argon2id +
-  AES-256-GCM) — вручную или по расписанию, хранятся последние три. Копия
-  записывается атомарно.
+- **Резервные копии** (`.vault`) — вручную или по расписанию в выбранную
+  папку, хранятся последние три. Копия записывается атомарно; открыть её
+  можно только этим хранилищем или восстановлением по долям.
 - **Restore** в открытое хранилище возвращает только данные: PIN, Hello,
   FIDO2, восстановление и задержки PIN остаются текущими.
 - **Импорт** на чистую установку: на том же устройстве — вход по PIN, на
@@ -104,7 +104,7 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
 ### 🚀 Что нового в версии 5.1.0
 
 > Хранилища 5.0.x не открываются: схема метаданных и формат checkpoint'а
-> изменены, миграции нет. Экспортируйте данные до обновления.
+> изменены, миграции нет — 5.1.0 создаёт хранилище заново.
 
 Консолидация безопасности и надёжности: атомарность всех операций,
 проверенная отказами; подтверждение PIN для изменений безопасности;
@@ -177,8 +177,8 @@ TPM 2.0 (without a TPM, a master password of 15+ characters is used).
   5, 15 minutes and an hour. There is no permanent lockout; rolling back the
   clock, swapping files or importing a backup does not clear the delay.
 - **PIN confirmation for security changes.** Changing the PIN, Windows Hello,
-  copy confirmation, binding or unbinding FIDO2, recovery, restore, export and
-  the backup folder all require a fresh PIN (plus Hello when enabled). An open
+  copy confirmation, binding or unbinding FIDO2, recovery, restore and the
+  backup folder all require a fresh PIN (plus Hello when enabled). An open
   session is not enough.
 - **Rollback and tampering detection.** Metadata is HMAC-signed; an external
   checkpoint in the user profile records its version, the PIN delay, and the
@@ -214,9 +214,9 @@ TPM 2.0 (without a TPM, a master password of 15+ characters is used).
 - **Share recovery** re-creates the device keys (TPM key, DPAPI entropy,
   integrity key) in one operation and sets a new PIN; Windows Hello and FIDO2
   are bound again afterwards.
-- **Backups** (`.vault`, optionally password-protected with Argon2id +
-  AES-256-GCM) — manual or scheduled, the last three are kept. A backup is
-  written atomically.
+- **Backups** (`.vault`) — manual or scheduled into a chosen folder, the last
+  three are kept. A backup is written atomically and opens only with this vault
+  or through share recovery.
 - **Restore** into an open vault brings back data only: the PIN, Hello,
   FIDO2, recovery and PIN delay stay as they are.
 - **Import** onto a clean install: on the same device it opens with the PIN,
@@ -241,7 +241,7 @@ TPM 2.0 (without a TPM, a master password of 15+ characters is used).
 ### 🚀 What's new in v5.1.0
 
 > Vaults from 5.0.x do not open: the metadata schema and checkpoint format
-> changed, with no migration. Export your data before upgrading.
+> changed, with no migration — 5.1.0 creates the vault from scratch.
 
 A security and reliability consolidation: atomicity of every operation,
 verified by fault injection; PIN confirmation for security changes; a growing

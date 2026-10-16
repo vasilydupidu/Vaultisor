@@ -202,6 +202,25 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
     setFields((cur) => cur.map((f) => (f.uid === uid ? { ...f, ...patch } : f)));
   };
 
+  // Смена типа: комментарий всегда открытый и подписан своим типом, его
+  // подпись не редактируется. Подпись, которую пользователь не менял,
+  // следует за типом.
+  const changeFieldType = (uid: string, type: FieldType) => {
+    setFields((cur) =>
+      cur.map((f) => {
+        if (f.uid !== uid) return f;
+        const leavesComment = f.field_type === "comment";
+        const keepsLabel = !leavesComment && f.label.trim() && f.label !== t(`fieldTypes.${f.field_type}`);
+        return {
+          ...f,
+          field_type: type,
+          label: type !== "comment" && keepsLabel ? f.label : t(`fieldTypes.${type}`),
+          is_secret: type === "comment" ? false : leavesComment ? type !== "id" : f.is_secret,
+        };
+      }),
+    );
+  };
+
   const removeField = (uid: string) => {
     setFields((cur) => cur.filter((f) => f.uid !== uid));
   };
@@ -347,6 +366,7 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
 
         {fields.map((f) => {
           const isPrimaryWeb = dbType === "web" && (f.label === t('recordEdit.defaultLogin') || f.label === t('recordEdit.defaultPassword'));
+          const isComment = f.field_type === "comment";
           return (
             <div key={f.uid} className="card-flat p-3.5 space-y-3">
               {!isPrimaryWeb ? (
@@ -354,20 +374,22 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
                   <div className="flex items-center gap-2">
                     <FieldTypeBadge
                       value={f.field_type}
-                      onChange={(t) => updateField(f.uid, { field_type: t })}
+                      onChange={(type) => changeFieldType(f.uid, type)}
                     />
-                    <button
-                      type="button"
-                      onClick={() => updateField(f.uid, { is_secret: !f.is_secret })}
-                      className={cn(
-                        "text-2xs px-2 py-1 rounded-md border transition-app",
-                        f.is_secret
-                          ? "bg-brand-500/15 text-brand-300 border-brand-500/20"
-                          : "bg-white/4 text-white/50 border-white/10",
-                      )}
-                    >
-                      {f.is_secret ? t('recordEdit.secretType') : t('recordEdit.publicType')}
-                    </button>
+                    {!isComment && (
+                      <button
+                        type="button"
+                        onClick={() => updateField(f.uid, { is_secret: !f.is_secret })}
+                        className={cn(
+                          "text-2xs px-2 py-1 rounded-md border transition-app",
+                          f.is_secret
+                            ? "bg-brand-500/15 text-brand-300 border-brand-500/20"
+                            : "bg-white/4 text-white/50 border-white/10",
+                        )}
+                      >
+                        {f.is_secret ? t('recordEdit.secretType') : t('recordEdit.publicType')}
+                      </button>
+                    )}
                     <div className="flex-1" />
                     <IconButton
                       icon={<Trash2 />}
@@ -377,12 +399,14 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
                       onClick={() => removeField(f.uid)}
                     />
                   </div>
-                  <Input
-                    label={t('recordEdit.fieldLabel')}
-                    value={f.label}
-                    onChange={(e) => updateField(f.uid, { label: e.target.value })}
-                    placeholder={t('recordEdit.fieldLabelPlaceholder')}
-                  />
+                  {!isComment && (
+                    <Input
+                      label={t('recordEdit.fieldLabel')}
+                      value={f.label}
+                      onChange={(e) => updateField(f.uid, { label: e.target.value })}
+                      placeholder={t('recordEdit.fieldLabelPlaceholder')}
+                    />
+                  )}
                 </>
               ) : null}
               {f.id && !f.revealed ? (
@@ -396,6 +420,15 @@ export function RecordEdit({ dbType, recordId, initialCategory, onCancel, onSave
                   <span className="tracking-widest text-white/60">••••••••</span>
                   <span className="text-2xs text-brand-300">{t('recordEdit.revealChange')}</span>
                 </button>
+              ) : isComment ? (
+                <textarea
+                  value={f.value ?? ""}
+                  onChange={(e) => updateField(f.uid, { value: e.target.value })}
+                  placeholder={t('recordEdit.commentPlaceholder')}
+                  aria-label={t('fieldTypes.comment')}
+                  rows={6}
+                  className="w-full min-h-36 resize-y rounded-xl bg-white/4 border border-white/10 px-3 py-2.5 text-sm text-white placeholder:text-white/30 leading-relaxed transition-app focus:outline-hidden focus:border-brand-500/70 focus:bg-white/6"
+                />
               ) : (
                 <div className="space-y-1">
                   <Input

@@ -88,11 +88,6 @@ pub async fn recovery_prepare_save(
         .into_path()
         .map_err(|_| VaultError::BadInput("Некорректный путь сохранения".into()))?;
     let canonical = canonical_save_path(&selected)?;
-    if canonical.exists() {
-        return Err(VaultError::BadInput(
-            "Файл уже существует; выберите новое имя в диалоге сохранения".into(),
-        ));
-    }
 
     let capability = uuid::Uuid::new_v4().to_string();
     if state.check_autolock() {
@@ -138,7 +133,7 @@ pub fn recovery_save_to_usb(capability: String, state: State<'_, AppState>) -> R
     if pending.session_started != initial {
         return Err(VaultError::Locked);
     }
-    usb::write_share_file_exclusive(&pending.canonical_path, &pending.share)?;
+    usb::write_share_file(&pending.canonical_path, &pending.share)?;
     log::info!("recovery_save_to_usb: capability consumed");
     Ok(())
 }

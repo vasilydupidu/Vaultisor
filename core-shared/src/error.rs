@@ -25,12 +25,6 @@ impl From<argon2::Error> for CoreError {
     }
 }
 
-impl From<argon2::password_hash::Error> for CoreError {
-    fn from(e: argon2::password_hash::Error) -> Self {
-        CoreError::Crypto(format!("argon2-hash: {e}"))
-    }
-}
-
 impl From<aes_gcm::Error> for CoreError {
     fn from(_: aes_gcm::Error) -> Self {
         CoreError::Crypto("aead-failure".into())

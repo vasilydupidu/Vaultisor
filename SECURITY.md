@@ -48,7 +48,7 @@ Vaultisor — локальное приложение без сетевой по
    не снимают. Безвозвратной блокировки нет.
 4. **Изменение политики безопасности из открытой сессии.** Смена PIN,
    Windows Hello, подтверждение копирования, FIDO2, восстановление, restore,
-   экспорт и папка резервных копий требуют свежего подтверждения PIN (и
+   и папка резервных копий требуют свежего подтверждения PIN (и
    Hello, если включён). Разрешение живёт только на стороне backend, выдаётся
    на одно действие, действует 2 минуты, одноразово и исчезает при
    блокировке.
@@ -138,7 +138,6 @@ Checkpoint намеренно лежит вне папки хранилища: �
 | Восстановление | Shamir над GF(2^8), 2 из 3 | доли восстанавливают ключ конверта, а не мастер-ключ |
 | Привязка к устройству | TPM 2.0 RSA-2048 (Platform KSP) → HKDF | подпись фиксированного challenge |
 | Привязка к учётной записи | DPAPI CurrentUser | энтропия 32 байта на хранилище |
-| Резервная копия с паролем | Argon2id → AES-256-GCM | параметры KDF в заголовке файла |
 
 ### Дисциплина цепочки поставок
 
@@ -196,8 +195,8 @@ not defend against, stated plainly.
    external checkpoint; rolling back files, importing a backup or moving the
    clock back does not clear it. There is no permanent lockout.
 4. **Security-policy changes from an open session.** Changing the PIN, Windows
-   Hello, copy confirmation, FIDO2, recovery, restore, export and the backup
-   folder all require a fresh PIN (plus Hello when enabled). The authorization
+   Hello, copy confirmation, FIDO2, recovery, restore and the backup folder
+   all require a fresh PIN (plus Hello when enabled). The authorization
    lives only in the backend, covers one action, lasts 2 minutes, is single-use
    and disappears on lock.
 5. **Moving the vault to another machine or Windows account** — including
@@ -286,7 +285,6 @@ share recovery.
 | Recovery | Shamir over GF(2^8), 2 of 3 | shares reconstruct an envelope key, not the master key |
 | Device binding | TPM 2.0 RSA-2048 (Platform KSP) → HKDF | signature over a fixed challenge |
 | Account binding | DPAPI CurrentUser | 32-byte per-vault entropy |
-| Password-protected backup | Argon2id → AES-256-GCM | KDF parameters stored in the file header |
 
 ### Supply chain
 

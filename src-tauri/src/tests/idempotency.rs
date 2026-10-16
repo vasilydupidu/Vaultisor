@@ -340,16 +340,13 @@ async fn import_rebase_is_bound_to_the_imported_snapshot() {
     env.lose_live_vault();
     let capability = env.grant(&newer, FileOperation::Import);
     crate::commands::vault::vault_import_blocking(
-        crate::commands::vault::ImportInput {
-            capability,
-            password: None,
-        },
+        crate::commands::vault::ImportInput { capability },
         &env.state,
     )
     .unwrap();
     // До первого входа базы подменены более старым снимком.
     let (_, records, _) =
-        crate::commands::vault::parse_bundle(&std::fs::read(&older).unwrap(), None).unwrap();
+        crate::commands::vault::parse_bundle(&std::fs::read(&older).unwrap()).unwrap();
     std::fs::write(env.state.records_path(), records).unwrap();
     env.restart();
     let snapshot = rollback_snapshot(env.unlock(PIN).await);
@@ -372,10 +369,7 @@ async fn import_moves_revisions_forward_on_first_unlock() {
     env.lose_live_vault();
     let capability = env.grant(&backup, FileOperation::Import);
     crate::commands::vault::vault_import_blocking(
-        crate::commands::vault::ImportInput {
-            capability,
-            password: None,
-        },
+        crate::commands::vault::ImportInput { capability },
         &env.state,
     )
     .unwrap();

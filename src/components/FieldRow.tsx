@@ -56,29 +56,30 @@ export function FieldRow({
     <div className="card-flat p-3.5 space-y-2.5">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium text-white truncate">{field.label}</span>
-        <span
-          className={cn(
-            "text-2xs px-1.5 py-0.5 rounded-md border whitespace-nowrap",
-            fieldColors[field.field_type],
-          )}
-        >
-          {fieldTypeLabels[field.field_type]}
-        </span>
+        {!isComment && (
+          <span
+            className={cn(
+              "text-2xs px-1.5 py-0.5 rounded-md border whitespace-nowrap",
+              fieldColors[field.field_type],
+            )}
+          >
+            {fieldTypeLabels[field.field_type]}
+          </span>
+        )}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className={cn("flex gap-1", isComment ? "items-start" : "items-center")}>
         <div
           className={cn(
-            "flex-1 px-3 py-2 rounded-lg bg-black/30 text-sm font-mono break-all",
+            "flex-1 px-3 py-2 rounded-lg bg-black/30 text-sm",
+            isComment
+              ? "whitespace-pre-wrap wrap-break-word leading-relaxed"
+              : "font-mono break-all",
             field.is_secret && !revealedValue && "tracking-widest text-white/60",
           )}
           data-allow-select
         >
-          {isComment && !revealedValue ? (
-            <span className="text-white/40 italic">{field.value_preview}</span>
-          ) : (
-            display
-          )}
+          {display}
         </div>
 
         {field.is_secret && (

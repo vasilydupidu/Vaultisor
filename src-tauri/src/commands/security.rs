@@ -46,7 +46,6 @@ pub enum SecurityAction {
     RegenerateRecovery,
     DisableRecovery,
     RestoreBackup,
-    ExportVault,
     ChangeBackupDirectory,
 }
 
@@ -63,7 +62,6 @@ impl SecurityAction {
             SecurityAction::RegenerateRecovery => "regenerate_recovery",
             SecurityAction::DisableRecovery => "disable_recovery",
             SecurityAction::RestoreBackup => "restore_backup",
-            SecurityAction::ExportVault => "export_vault",
             SecurityAction::ChangeBackupDirectory => "change_backup_directory",
         }
     }

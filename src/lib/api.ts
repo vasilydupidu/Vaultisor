@@ -107,7 +107,6 @@ export type SecurityAction =
   | "regenerate_recovery"
   | "disable_recovery"
   | "restore_backup"
-  | "export_vault"
   | "change_backup_directory";
 
 export const apiSecurityAuthorize = (action: SecurityAction, pin: string) =>
@@ -205,22 +204,20 @@ export interface LockInfo {
 }
 export const apiVaultLockInfo = () => invoke<LockInfo>("vault_lock_info");
 
-// === Импорт / экспорт / восстановление ===
-// Импорт на чистую установку (онбординг). Восстановление ПОВЕРХ существующего
-// vault (из Настроек) — заменяет текущие данные, требует повторного входа.
-// Опциональный password задействует шифрование бандла VLT4.
-export const apiPrepareFile = (operation: "export" | "import" | "restore" | "backup_directory" | "csv_import" | "recovery_read") =>
+// === Импорт / восстановление ===
+// Импорт резервной копии на чистую установку (онбординг). Восстановление
+// ПОВЕРХ существующего vault (из Настроек) заменяет записи и требует
+// повторного входа.
+export const apiPrepareFile = (operation: "import" | "restore" | "backup_directory" | "csv_import" | "recovery_read") =>
   invoke<string>("file_prepare", { operation });
+export const apiVaultImport = async () => {
+  const capability = await apiPrepareFile("import");
+  return invoke<void>("vault_import", { input: { capability } });
+};
 /** Полномочие на файл берётся заранее: повтор после подтверждения PIN не
  *  открывает диалог выбора файла второй раз. */
-export const apiVaultExport = (capability: string, password?: string) =>
-  invoke<void>("vault_export", { input: { capability, password: password ?? null } });
-export const apiVaultImport = async (password?: string) => {
-  const capability = await apiPrepareFile("import");
-  return invoke<void>("vault_import", { input: { capability, password: password ?? null } });
-};
-export const apiVaultRestore = (capability: string, password?: string) =>
-  invoke<void>("vault_restore", { input: { capability, password: password ?? null } });
+export const apiVaultRestore = (capability: string) =>
+  invoke<void>("vault_restore", { input: { capability } });
 
 // === Records ===
 export interface RecordListOpts {

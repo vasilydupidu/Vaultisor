@@ -10,113 +10,16 @@ use crate::commands::file_grants::{session_stamp, FileOperation};
 use crate::storage::create_staging::CreateStaging;
 use crate::storage::osjournal::{OsJournal, Resource};
 
-/// Экспорт хранилища: копирует ОБА файла (meta + records) в .vault-bundle.
-/// Формат бандла: tar-архив с двумя файлами внутри (или просто два рядом
-/// расположенных файла с расширением .meta и .records). Для простоты —
-/// один tar-файл, без сжатия.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ExportInput {
-    pub capability: String,
-    pub password: Option<String>,
-}
-
-/// Команда выполняет Argon2id (512 МиБ) и потоковую работу с
-/// файлами хранилища. Синхронная Tauri-команда делала бы это в главном потоке
-/// и подвешивала интерфейс на несколько секунд.
-#[tauri::command]
-pub async fn vault_export(input: ExportInput, state: State<'_, AppState>) -> Result<()> {
-    let state = state.inner().clone();
-    crate::blocking::run(move || vault_export_blocking(input, &state)).await
-}
-
-pub(crate) fn vault_export_blocking(input: ExportInput, state: &AppState) -> Result<()> {
-    // Требуем разблокированную сессию.
-    // Без проверки злонамеренный JS мог экспортировать БД без ввода PIN —
-    // и хотя файл бесполезен без master_key (DPAPI-защита), при компрометации
-    // Shamir-долей атакующий получит доступ к содержимому.
-    // Сначала авто-блокировка по простою.
-    if state.check_autolock() {
-        return Err(VaultError::Locked);
-    }
-    // Разрешение изымается до полномочия на файл: без PIN выбранный файл
-    // остаётся за пользователем и годится для повтора после подтверждения.
-    crate::commands::security::consume(
-        state,
-        crate::commands::security::SecurityAction::ExportVault,
-    )?;
-    let session = state.session.lock();
-    if !session.is_unlocked() {
-        return Err(VaultError::Locked);
-    }
-    let initial = session_stamp(&session);
-    let target =
-        state
-            .file_grants
-            .lock()
-            .consume(&input.capability, FileOperation::Export, initial)?;
-    drop(session);
-    let meta_src = state.meta_path();
-    let records_src = state.records_path();
-    let web_src = state.web_path();
-    if !meta_src.exists() || !records_src.exists() || !web_src.exists() {
-        return Err(VaultError::NotInitialized);
-    }
-    // Санитизируем meta.db перед экспортом (обнуляем pin_hash, удаляем recovery_local).
-    let (meta_bytes, records_bytes, web_bytes) =
-        crate::commands::backup::snapshot_bundle_parts(state)?;
-    let mut out =
-        Vec::with_capacity(12 + meta_bytes.len() + records_bytes.len() + web_bytes.len() + 12);
-    out.extend_from_slice(b"VLT2");
-    out.extend_from_slice(&(meta_bytes.len() as u32).to_le_bytes());
-    out.extend_from_slice(&meta_bytes);
-    out.extend_from_slice(&(records_bytes.len() as u32).to_le_bytes());
-    out.extend_from_slice(&records_bytes);
-    out.extend_from_slice(&(web_bytes.len() as u32).to_le_bytes());
-    out.extend_from_slice(&web_bytes);
-
-    let final_bytes = if let Some(pwd) = input.password.as_deref().filter(|p| !p.trim().is_empty())
-    {
-        seal_password_bundle(&out, pwd, crate::crypto::kdf::Argon2Params::default())?
-    } else {
-        out
-    };
-
-    if state.check_autolock() {
-        return Err(VaultError::Locked);
-    }
-    let session = state.session.lock();
-    if session_stamp(&session) != initial {
-        return Err(VaultError::Locked);
-    }
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(target)?;
-    file.write_all(&final_bytes)?;
-    file.sync_all()?;
-    log::info!(
-        "vault_export: succeeded ({} + {} + {} bytes)",
-        meta_bytes.len(),
-        records_bytes.len(),
-        web_bytes.len()
-    );
-    Ok(())
-}
-
-/// Импорт ранее экспортированной БД. Доступен только если локальной БД
-/// ещё нет (т.е. на чистой инсталляции после онбординга или до него).
+/// Импорт резервной копии на чистую установку: доступен, только пока
+/// локального хранилища нет (онбординг).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImportInput {
     pub capability: String,
-    pub password: Option<String>,
 }
 
-/// Команда выполняет Argon2id (512 МиБ) и потоковую работу с
-/// файлами хранилища. Синхронная Tauri-команда делала бы это в главном потоке
-/// и подвешивала интерфейс на несколько секунд.
+/// Команда читает и записывает файлы хранилища целиком. Синхронная
+/// Tauri-команда делала бы это в главном потоке и подвешивала интерфейс.
 #[tauri::command]
 pub async fn vault_import(input: ImportInput, state: State<'_, AppState>) -> Result<()> {
     let state = state.inner().clone();
@@ -141,7 +44,7 @@ pub(crate) fn vault_import_blocking(input: ImportInput, state: &AppState) -> Res
         )?
     };
     let bundle = std::fs::read(source)?;
-    let (meta, records, web) = parse_bundle(&bundle, input.password.as_deref())?;
+    let (meta, records, web) = parse_bundle(&bundle)?;
     std::fs::create_dir_all(&state.data_dir)?;
 
     let mut journal = OsJournal::begin(&state.data_dir, &state.os)?;
@@ -234,33 +137,6 @@ fn stage_import(
     Ok(bootstrap)
 }
 
-/// Заголовок VLT4: магия, параметры Argon2id и соль.
-///
-/// Параметры KDF лежат в самом файле: иначе изменение констант сборки сделало
-/// бы ранее созданные защищённые паролем копии нечитаемыми.
-const BUNDLE_SALT_LEN: usize = 16;
-const VLT4_HEADER_LEN: usize = 4 + 4 * 3 + BUNDLE_SALT_LEN;
-const BUNDLE_AAD: &[u8] = b"vaultisor:backup-v3";
-
-pub(crate) fn seal_password_bundle(
-    payload: &[u8],
-    password: &str,
-    params: crate::crypto::kdf::Argon2Params,
-) -> Result<Vec<u8>> {
-    let salt: [u8; BUNDLE_SALT_LEN] = crate::crypto::rng::random_array();
-    let kek = crate::crypto::kdf::argon2id_derive_key_with(password.as_bytes(), &salt, params)?;
-    let blob = crate::crypto::aead::encrypt(&kek, payload, BUNDLE_AAD)?;
-    let body = blob.to_bytes();
-    let mut out = Vec::with_capacity(VLT4_HEADER_LEN + body.len());
-    out.extend_from_slice(b"VLT4");
-    out.extend_from_slice(&params.m_cost.to_le_bytes());
-    out.extend_from_slice(&params.t_cost.to_le_bytes());
-    out.extend_from_slice(&params.p_cost.to_le_bytes());
-    out.extend_from_slice(&salt);
-    out.extend_from_slice(&body);
-    Ok(out)
-}
-
 /// Структурная проверка недоверенного файла SQLite БЕЗ применения миграций.
 ///
 /// Открываем строго read-only, прогоняем `quick_check` и убеждаемся, что это
@@ -293,57 +169,13 @@ fn validate_untrusted_sqlite(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-/// Разобрать .vault-бандл: VLT4 — защищённый паролем контейнер вокруг VLT2,
-/// VLT2 — три базы подряд (meta, records, web).
+/// Разобрать .vault-бандл VLT2: три базы подряд (meta, records, web).
 /// Возвращает (meta, records, web).
 pub(crate) type ParsedBundle = (Vec<u8>, Vec<u8>, Vec<u8>);
-pub(crate) fn parse_bundle(bundle: &[u8], password: Option<&str>) -> Result<ParsedBundle> {
+pub(crate) fn parse_bundle(b: &[u8]) -> Result<ParsedBundle> {
     fn corrupt() -> VaultError {
         VaultError::BadInput("Повреждённый бандл".into())
     }
-    if bundle.len() < 8 {
-        return Err(corrupt());
-    }
-
-    let payload: std::borrow::Cow<'_, [u8]> = if &bundle[0..4] == b"VLT4" {
-        let pwd = password.filter(|p| !p.trim().is_empty()).ok_or_else(|| {
-            VaultError::BadInput(
-                "Этот файл резервной копии зашифрован паролем. Пожалуйста, укажите пароль.".into(),
-            )
-        })?;
-        if bundle.len() < VLT4_HEADER_LEN + 12 + 16 {
-            return Err(VaultError::BadInput(
-                "Повреждённый зашифрованный бандл".into(),
-            ));
-        }
-        let read_u32 = |offset: usize| {
-            u32::from_le_bytes([
-                bundle[offset],
-                bundle[offset + 1],
-                bundle[offset + 2],
-                bundle[offset + 3],
-            ])
-        };
-        let params =
-            crate::crypto::kdf::Argon2Params::from_stored(read_u32(4), read_u32(8), read_u32(12))
-                .map_err(|_| {
-                VaultError::BadInput(
-                    "Параметры защиты в заголовке резервной копии недопустимы".into(),
-                )
-            })?;
-        let mut salt = [0u8; BUNDLE_SALT_LEN];
-        salt.copy_from_slice(&bundle[16..VLT4_HEADER_LEN]);
-        let blob_bytes = &bundle[VLT4_HEADER_LEN..];
-        let kek = crate::crypto::kdf::argon2id_derive_key_with(pwd.as_bytes(), &salt, params)?;
-        let blob = crate::crypto::aead::EncryptedBlob::from_bytes(blob_bytes)?;
-        let pt = crate::crypto::aead::decrypt(&kek, &blob, BUNDLE_AAD)
-            .map_err(|_| VaultError::BadInput("Неверный пароль к резервной копии".into()))?;
-        std::borrow::Cow::Owned(pt)
-    } else {
-        std::borrow::Cow::Borrowed(bundle)
-    };
-
-    let b = payload.as_ref();
     if b.len() < 8 {
         return Err(corrupt());
     }
@@ -377,9 +209,8 @@ pub(crate) fn parse_bundle(bundle: &[u8], password: Option<&str>) -> Result<Pars
 
 /// Восстановить пользовательские данные из резервной копии в открытое
 /// хранилище (см. `storage::restore`). Метаданные безопасности не меняются.
-/// Команда выполняет Argon2id (512 МиБ) и потоковую работу с
-/// файлами хранилища. Синхронная Tauri-команда делала бы это в главном потоке
-/// и подвешивала интерфейс на несколько секунд.
+/// Команда читает и записывает файлы хранилища целиком, поэтому выполняется
+/// вне главного потока.
 #[tauri::command]
 pub async fn vault_restore(input: ImportInput, state: State<'_, AppState>) -> Result<()> {
     let state = state.inner().clone();
@@ -423,7 +254,7 @@ pub(crate) fn vault_restore_blocking(input: ImportInput, state: &AppState) -> Re
     let bundle = std::fs::read(source)?;
     // Метаданные копии не используются: факторы входа, восстановление и
     // задержки PIN остаются текущими.
-    let (_, records, web) = parse_bundle(&bundle, input.password.as_deref())?;
+    let (_, records, web) = parse_bundle(&bundle)?;
 
     let records_key = master.with_decrypted(derive_sqlcipher_key)?;
     let web_key = master.with_decrypted(crate::storage::records_db::derive_web_sqlcipher_key)?;
@@ -498,16 +329,12 @@ mod tests {
 
     #[test]
     fn path_authority_is_not_an_ipc_input() {
-        assert!(serde_json::from_value::<ExportInput>(
-            serde_json::json!({"target_path":"C:\\victim", "password":null})
+        assert!(serde_json::from_value::<ImportInput>(
+            serde_json::json!({"source_path":"C:\\victim"})
         )
         .is_err());
         assert!(serde_json::from_value::<ImportInput>(
-            serde_json::json!({"source_path":"C:\\victim", "password":null})
-        )
-        .is_err());
-        assert!(serde_json::from_value::<ImportInput>(
-            serde_json::json!({"capability":"token", "source_path":"C:\\victim", "password":null})
+            serde_json::json!({"capability":"token", "source_path":"C:\\victim"})
         )
         .is_err());
     }
@@ -556,7 +383,7 @@ mod tests {
     #[test]
     fn parse_bundle_vlt2_roundtrip() {
         let bundle = build_vlt2(b"META-BYTES", b"RECORDS-BYTES", b"WEB-BYTES");
-        let (m, r, w) = parse_bundle(&bundle, None).unwrap();
+        let (m, r, w) = parse_bundle(&bundle).unwrap();
         assert_eq!(m, b"META-BYTES");
         assert_eq!(r, b"RECORDS-BYTES");
         assert_eq!(w, b"WEB-BYTES");
@@ -566,14 +393,14 @@ mod tests {
     fn parse_bundle_rejects_bad_magic() {
         let mut b = build_vlt2(b"M", b"R", b"W");
         b[0] = b'X';
-        assert!(parse_bundle(&b, None).is_err());
+        assert!(parse_bundle(&b).is_err());
     }
 
     #[test]
     fn parse_bundle_rejects_truncated() {
         let bundle = build_vlt2(b"META", b"RECORDS", b"WEB");
         let truncated = &bundle[..bundle.len() - 5];
-        assert!(parse_bundle(truncated, None).is_err());
+        assert!(parse_bundle(truncated).is_err());
     }
 
     #[test]
@@ -582,74 +409,12 @@ mod tests {
         // а не паниковать на срезе: границы проверяются до среза.
         let mut b = build_vlt2(b"META", b"RECORDS", b"WEB");
         b[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
-        assert!(parse_bundle(&b, None).is_err());
+        assert!(parse_bundle(&b).is_err());
     }
 
     #[test]
     fn parse_bundle_rejects_too_short() {
-        assert!(parse_bundle(b"VLT", None).is_err());
-        assert!(parse_bundle(&[], None).is_err());
-    }
-
-    /// Дешёвые параметры Argon2id для тестов: проверяется формат, не стоимость.
-    fn fast_params() -> crate::crypto::kdf::Argon2Params {
-        crate::crypto::kdf::Argon2Params {
-            m_cost: 8 * 1024,
-            t_cost: 1,
-            p_cost: 1,
-        }
-    }
-
-    #[test]
-    fn parse_bundle_vlt4_password_roundtrip() {
-        let inner = build_vlt2(b"META", b"RECORDS", b"WEB");
-        let vlt4 = seal_password_bundle(&inner, "my-backup-pass", fast_params()).unwrap();
-        assert_eq!(&vlt4[0..4], b"VLT4");
-
-        // Correct password
-        let (m, r, w) = parse_bundle(&vlt4, Some("my-backup-pass")).unwrap();
-        assert_eq!(m, b"META");
-        assert_eq!(r, b"RECORDS");
-        assert_eq!(w, b"WEB");
-
-        // Wrong password
-        assert!(parse_bundle(&vlt4, Some("wrong-pass")).is_err());
-        // Missing password
-        assert!(parse_bundle(&vlt4, None).is_err());
-    }
-
-    /// Заголовок с экстремальными параметрами Argon2 отвергается до деривации:
-    /// тест завершается мгновенно, а не через годы вычислений.
-    #[test]
-    fn vlt4_header_with_extreme_kdf_params_is_rejected_before_derivation() {
-        let inner = build_vlt2(b"M", b"R", b"W");
-        let sealed = seal_password_bundle(&inner, "pass", fast_params()).unwrap();
-        for (offset, value) in [(4, u32::MAX), (8, u32::MAX), (12, u32::MAX), (8, 0)] {
-            let mut forged = sealed.clone();
-            forged[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
-            let started = std::time::Instant::now();
-            assert!(parse_bundle(&forged, Some("pass")).is_err());
-            assert!(started.elapsed() < std::time::Duration::from_secs(2));
-        }
-    }
-
-    /// Параметры KDF теперь лежат в самом файле, поэтому копия,
-    /// созданная на других параметрах, продолжает открываться и после смены
-    /// констант сборки.
-    #[test]
-    fn vlt4_carries_its_own_kdf_parameters() {
-        let inner = build_vlt2(b"M", b"R", b"W");
-        let unusual = crate::crypto::kdf::Argon2Params {
-            m_cost: 16 * 1024,
-            t_cost: 2,
-            p_cost: 1,
-        };
-        let sealed = seal_password_bundle(&inner, "pass", unusual).unwrap();
-        assert_eq!(
-            u32::from_le_bytes([sealed[4], sealed[5], sealed[6], sealed[7]]),
-            unusual.m_cost
-        );
-        let (m, _, _) = parse_bundle(&sealed, Some("pass")).unwrap();
-        assert_eq!(m, b"M");
+        assert!(parse_bundle(b"VLT").is_err());
+        assert!(parse_bundle(&[]).is_err());
     }
 }

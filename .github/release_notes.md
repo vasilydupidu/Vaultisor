@@ -4,7 +4,7 @@
 
 ### Русский
 
-> Хранилища версий 5.0.x не открываются: экспортируйте данные перед обновлением.
+> Хранилища версий 5.0.x не открываются: 5.1.0 создаёт хранилище заново.
 
 - Атомарность всех операций с хранилищем проверена отказом на каждом шаге записи.
 - Изменения безопасности требуют свежего подтверждения PIN (и Windows Hello).
@@ -17,7 +17,7 @@
 
 ### English
 
-> Vaults from 5.0.x will not open: export your data before upgrading.
+> Vaults from 5.0.x will not open: 5.1.0 creates the vault from scratch.
 
 - Atomicity of every vault operation verified with a failure at each write step.
 - Security changes require a fresh PIN confirmation (plus Windows Hello).

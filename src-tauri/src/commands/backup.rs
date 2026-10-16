@@ -1,7 +1,7 @@
 // Лёгкая автоматизация резервных копий.
 //
-// Бэкап = копия ОДНОГО зашифрованного бандла (все три БД, формат VLT2 — как
-// vault_export) в выбранную пользователем папку. Если папка синхронизируется
+// Бэкап = копия ОДНОГО зашифрованного бандла (все три БД, формат VLT2) в
+// выбранную пользователем папку. Если папка синхронизируется
 // облачным клиентом (Я.Диск/Dropbox/OneDrive) — копия уезжает в облако.
 //
 // Безопасность: бандл полностью зашифрован и привязан к устройству (TPM+DPAPI);
@@ -227,11 +227,11 @@ pub async fn backup_now(request_id: String, state: State<'_, AppState>) -> Resul
     crate::blocking::run(move || backup_now_blocking(&state, &request_id)).await
 }
 
-/// Создать резервную копию. `request_id` входит в имя файла: повтор того
-/// же запроса после потерянного ответа возвращает уже записанную копию.
+/// Создать резервную копию. Начало `request_id` входит в имя файла: повтор
+/// того же запроса после потерянного ответа находит уже записанную копию.
 pub(crate) fn backup_now_blocking(state: &AppState, request_id: &str) -> Result<BackupResult> {
     let request_id = crate::commands::request::parse(request_id)?;
-    // Требуем разблокированную сессию (как и экспорт) — защита от эксфильтрации
+    // Требуем разблокированную сессию — защита от эксфильтрации
     // фоновым/вредоносным кодом без ведома пользователя.
     // Сначала авто-блокировка по простою.
     if state.check_autolock() {
@@ -245,7 +245,9 @@ pub(crate) fn backup_now_blocking(state: &AppState, request_id: &str) -> Result<
 
     let target = validate_dir(&dir)?;
     std::fs::create_dir_all(target)?;
-    let suffix = format!("-{request_id}.vault");
+    // Хватает первых 8 hex-символов (32 бита): совпасть они могут только
+    // у разных запросов в одной папке, где хранятся единицы копий.
+    let suffix = format!("-{}.vault", &request_id[..8]);
     let done = std::fs::read_dir(target)?
         .flatten()
         .map(|e| e.path())

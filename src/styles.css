@@ -142,6 +142,9 @@
   }
 }
 
+/* Базовые стили элементов живут в слое base, как и сброс Tailwind: любая
+   утилита на элементе перекрывает их (например, focus:outline-hidden у поля
+   ввода — глобальную рамку фокуса). Стили вне слоёв побеждали бы утилиты. */
 @layer base {
   /* Tailwind 4 оставляет кнопкам системный курсор; в приложении
      интерактивные элементы показывают «руку», как и раньше. */
@@ -149,84 +152,104 @@
   [role="button"]:not([aria-disabled="true"]) {
     cursor: pointer;
   }
-}
 
-/* Roboto и Noto Serif подключаем как локальные fallback'и через систему.
-   В офлайн-режиме мы НЕ ходим в Google Fonts — это решение по безопасности.
-   Если шрифт не установлен в системе — браузер использует Arial / Sans-Serif. */
+  /* Roboto и Noto Serif подключаем как локальные fallback'и через систему.
+     В офлайн-режиме мы НЕ ходим в Google Fonts — это решение по безопасности.
+     Если шрифт не установлен в системе — браузер использует Arial / Sans-Serif. */
 
-:root {
-  color-scheme: dark;
+  :root {
+    color-scheme: dark;
 
-  --radius-card: 14px;
-}
+    --radius-card: 14px;
+  }
 
-/* Базовый сброс */
-html,
-body,
-#root {
-  height: 100%;
-}
+  /* Базовый сброс */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-html {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
 
-body {
-  font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-  font-size: 15px;
-  line-height: 1.5;
-  background:
-    radial-gradient(1200px 600px at 50% -20%, rgba(12, 164, 159, 0.08) 0%, transparent 50%),
-    linear-gradient(180deg, #0c0c0c 0%, #161616 100%);
-  background-attachment: fixed;
-  color: #ffffff;
-  overscroll-behavior: none;
-  user-select: none; /* desktop-app feel */
-}
+  body {
+    font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    background:
+      radial-gradient(1200px 600px at 50% -20%, rgba(12, 164, 159, 0.08) 0%, transparent 50%),
+      linear-gradient(180deg, #0c0c0c 0%, #161616 100%);
+    background-attachment: fixed;
+    color: #ffffff;
+    overscroll-behavior: none;
+    user-select: none; /* desktop-app feel */
+  }
 
-/* Разрешаем выделение и ввод в ключевых элементах.
-   WebView2: при user-select:none на body каретка/ввод в input может ломаться,
-   если не сброшен И префиксный -webkit-user-select. Ставим оба явно. */
-input,
-textarea,
-[data-allow-select] {
-  user-select: text;
-  -webkit-user-select: text;
-}
+  /* Разрешаем выделение и ввод в ключевых элементах.
+     WebView2: при user-select:none на body каретка/ввод в input может ломаться,
+     если не сброшен И префиксный -webkit-user-select. Ставим оба явно. */
+  input,
+  textarea,
+  [data-allow-select] {
+    user-select: text;
+    -webkit-user-select: text;
+  }
 
-/* Скроллбары — тонкие, в стиле приложения */
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-*::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
+  /* Скроллбары — тонкие, в стиле приложения */
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
 
-/* Focus ring унифицированный */
-:focus-visible {
-  outline: 2px solid var(--color-brand-500);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
+  /* Focus ring унифицированный */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
 
-/* Отключаем стандартные стили автокомплита Chrome (жёлтый фон) */
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
-  -webkit-text-fill-color: #ffffff !important;
-  transition: background-color 5000s ease-in-out 0s;
+  /* Отключаем стандартные стили автокомплита Chrome (жёлтый фон) */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
+    -webkit-text-fill-color: #ffffff !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
+  /* Убираем стандартные spin-кнопки у <input type="number"> */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  /* Отключаем нативную кнопку «глазик» Edge/WebView2 (::-ms-reveal) и очистки (::-ms-clear),
+     чтобы не было дублирования с нашим единым кастомным глазиком */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+  }
 }
 
 /* Утилитарный класс: запрещает перетаскивание любого drag-friendly */
@@ -325,26 +348,6 @@ input:-webkit-autofill:focus {
   letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.5);
   font-weight: 500;
-}
-
-/* Убираем стандартные spin-кнопки у <input type="number"> */
-input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-input[type="number"] {
-  -moz-appearance: textfield;
-}
-
-/* Отключаем нативную кнопку «глазик» Edge/WebView2 (::-ms-reveal) и очистки (::-ms-clear),
-   чтобы не было дублирования с нашим единым кастомным глазиком */
-input::-ms-reveal,
-input::-ms-clear {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  margin: 0 !important;
 }
 
 /* ── Language toggle pill ── */

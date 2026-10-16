@@ -12,11 +12,12 @@ export const fieldTypeLabels: Record<FieldType, string> = {
   get custom() { return i18n.t('fieldTypes.custom'); },
 };
 
+// Комментарий — последним: это не секрет, а заметка к записи.
 export const allFieldTypes: FieldType[] = [
   "secret",
   "api",
   "key",
   "id",
-  "comment",
   "custom",
+  "comment",
 ];

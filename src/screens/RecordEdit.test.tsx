@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -71,6 +71,7 @@ describe("RecordEdit", () => {
     recordUpdate.mockReset().mockResolvedValue(undefined);
     recordCreate.mockReset().mockResolvedValue("rec-1");
   });
+  afterEach(cleanup);
 
   /**
    * Регрессия: объект toast-api пересоздавался на каждом
@@ -124,5 +125,40 @@ describe("RecordEdit", () => {
     recordGet.mockRejectedValue("STORAGE_ERROR: Ошибка хранилища");
     const { onCancel } = renderEditor();
     await waitFor(() => expect(onCancel).toHaveBeenCalled());
+  });
+
+  /**
+   * Комментарий — открытая заметка: ни переключателя «секретное», ни подписи
+   * поля, значение в многострочном поле. Секретное поле, переведённое в
+   * комментарий, перестаёт быть секретным.
+   */
+  it("показывает комментарий открытой заметкой", async () => {
+    recordGet.mockResolvedValue({
+      ...STORED_RECORD,
+      fields: [
+        STORED_RECORD.fields[0],
+        {
+          ...STORED_RECORD.fields[0],
+          id: "f-note",
+          field_type: "comment" as const,
+          label: "fieldTypes.comment",
+          is_secret: false,
+          sort_order: 1,
+          value_preview: "",
+        },
+      ],
+    });
+    renderEditor();
+    const note = (await screen.findByLabelText("fieldTypes.comment")) as HTMLTextAreaElement;
+    expect(note.tagName).toBe("TEXTAREA");
+    expect(note.value).toBe("revealed");
+    // Подпись и переключатель есть только у секретного поля.
+    expect(screen.getAllByText("recordEdit.fieldLabel")).toHaveLength(1);
+    expect(screen.getAllByText("recordEdit.secretType")).toHaveLength(1);
+
+    const [secretType] = screen.getAllByRole("combobox") as HTMLSelectElement[];
+    fireEvent.change(secretType, { target: { value: "comment" } });
+    expect(screen.queryByText("recordEdit.secretType")).toBeNull();
+    expect(screen.queryByText("recordEdit.fieldLabel")).toBeNull();
   });
 });

@@ -93,13 +93,7 @@ async fn unlocked() -> (Env, Shares) {
 
 fn import(env: &Env, path: &std::path::Path) -> crate::error::Result<()> {
     let capability = env.grant(path, FileOperation::Import);
-    crate::commands::vault::vault_import_blocking(
-        ImportInput {
-            capability,
-            password: None,
-        },
-        &env.state,
-    )
+    crate::commands::vault::vault_import_blocking(ImportInput { capability }, &env.state)
 }
 
 // ------------------------------------------------------------ restore
@@ -113,13 +107,8 @@ fn restore_case(plan: Option<(usize, Mode)>) -> CaseFuture {
         env.authorize(SecurityAction::RestoreBackup).await;
         let capability = env.grant(&backup, FileOperation::Restore);
         arm(plan);
-        let _ = crate::commands::vault::vault_restore_blocking(
-            ImportInput {
-                capability,
-                password: None,
-            },
-            &env.state,
-        );
+        let _ =
+            crate::commands::vault::vault_restore_blocking(ImportInput { capability }, &env.state);
         let (steps, trace) = observed();
 
         let (_, mut violations) = restart_and_inspect(&mut env).await;
@@ -190,14 +179,7 @@ async fn restore_keeps_the_current_authentication_policy() {
         .await
         .unwrap();
     let capability = env.grant(&backup, FileOperation::Restore);
-    crate::commands::vault::vault_restore_blocking(
-        ImportInput {
-            capability,
-            password: None,
-        },
-        &env.state,
-    )
-    .unwrap();
+    crate::commands::vault::vault_restore_blocking(ImportInput { capability }, &env.state).unwrap();
 
     env.restart();
     let after = meta(&env);
@@ -383,7 +365,7 @@ fn backup_case(plan: Option<(usize, Mode)>) -> CaseFuture {
         let found = backups(&dir);
         for path in &found {
             let bytes = std::fs::read(path).unwrap();
-            if crate::commands::vault::parse_bundle(&bytes, None).is_err() {
+            if crate::commands::vault::parse_bundle(&bytes).is_err() {
                 violations.push(format!("неполная копия {path:?}"));
             }
         }
@@ -539,8 +521,7 @@ async fn import_never_lowers_the_pin_backoff() {
 #[tokio::test]
 async fn tampered_bundle_is_rejected_on_the_source_device() {
     let (mut env, _) = unlocked().await;
-    let (meta_bytes, records, web) =
-        crate::commands::vault::parse_bundle(&env.bundle(), None).unwrap();
+    let (meta_bytes, records, web) = crate::commands::vault::parse_bundle(&env.bundle()).unwrap();
     let meta_path = env.put_file("tampered.meta.db", &meta_bytes);
     {
         let connection = rusqlite::Connection::open(&meta_path).unwrap();
@@ -570,7 +551,7 @@ async fn tampered_bundle_is_rejected_on_the_source_device() {
 async fn bundle_from_another_windows_account_opens_only_via_recovery() {
     let (source, shares) = unlocked().await;
     let (meta_bytes, records, web) =
-        crate::commands::vault::parse_bundle(&source.bundle(), None).unwrap();
+        crate::commands::vault::parse_bundle(&source.bundle()).unwrap();
     let meta_path = source.put_file("foreign.meta.db", &meta_bytes);
     {
         // DPAPI чужой учётной записи здесь не развернуть: моделируем порчей.

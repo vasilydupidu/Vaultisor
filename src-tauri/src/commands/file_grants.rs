@@ -15,7 +15,6 @@ use tauri_plugin_dialog::DialogExt;
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FileOperation {
-    Export,
     Restore,
     Import,
     BackupDirectory,
@@ -136,11 +135,6 @@ pub async fn file_prepare(
     let selected = tauri::async_runtime::spawn_blocking(move || {
         let dialog = app.dialog().file();
         match operation {
-            FileOperation::Export => dialog
-                .set_title("Экспорт Vaultisor")
-                .set_file_name("Vaultisor.vault")
-                .add_filter("Vaultisor", &["vault"])
-                .blocking_save_file(),
             FileOperation::Restore | FileOperation::Import => dialog
                 .set_title("Выберите резервную копию Vaultisor")
                 .add_filter("Vaultisor", &["vault"])
@@ -163,19 +157,7 @@ pub async fn file_prepare(
     .ok_or_else(|| VaultError::BadInput("Выбор файла отменён".into()))?
     .into_path()
     .map_err(|_| invalid_grant())?;
-    let path = if operation == FileOperation::Export {
-        let parent = selected
-            .parent()
-            .ok_or_else(invalid_grant)?
-            .canonicalize()?;
-        let path = parent.join(selected.file_name().ok_or_else(invalid_grant)?);
-        if path.exists() {
-            return Err(VaultError::BadInput("Выберите новое имя файла".into()));
-        }
-        path
-    } else {
-        selected.canonicalize()?
-    };
+    let path = selected.canonicalize()?;
     if authorize(&state, operation)? != initial {
         return Err(VaultError::Locked);
     }
@@ -202,23 +184,23 @@ mod tests {
         let issue = |store: &mut FileGrants| {
             store.issue(
                 PathBuf::from("selected.vault"),
-                FileOperation::Export,
+                FileOperation::Import,
                 session,
                 now,
             )
         };
         let token = issue(&mut store);
         assert!(store
-            .consume_at(&token, FileOperation::Export, session, now)
+            .consume_at(&token, FileOperation::Import, session, now)
             .is_ok());
         assert!(store
-            .consume_at(&token, FileOperation::Export, session, now)
+            .consume_at(&token, FileOperation::Import, session, now)
             .is_err());
         let token = issue(&mut store);
         assert!(store
             .consume_at(
                 &token,
-                FileOperation::Export,
+                FileOperation::Import,
                 session,
                 now + Duration::from_secs(60)
             )
@@ -231,7 +213,7 @@ mod tests {
         assert!(store
             .consume_at(
                 &token,
-                FileOperation::Export,
+                FileOperation::Import,
                 Some(now + Duration::from_secs(1)),
                 now
             )
@@ -239,7 +221,7 @@ mod tests {
         let token = issue(&mut store);
         store.clear();
         assert!(store
-            .consume_at(&token, FileOperation::Export, session, now)
+            .consume_at(&token, FileOperation::Import, session, now)
             .is_err());
     }
 }

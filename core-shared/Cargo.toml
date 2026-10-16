@@ -13,7 +13,9 @@ crate-type = ["rlib"]
 [dependencies]
 # === Cryptography ===
 aes-gcm = { version = "0.10", features = ["aes", "alloc"] }
-argon2 = { version = "0.5", features = ["std"] }
+# parallel: дорожки Argon2id считаются на нескольких ядрах. Результат тот же,
+# что у последовательного расчёта, — меняется только время входа.
+argon2 = { version = "0.6", default-features = false, features = ["alloc", "parallel"] }
 sha2 = "0.10"
 hkdf = "0.12"
 hmac = "0.12"

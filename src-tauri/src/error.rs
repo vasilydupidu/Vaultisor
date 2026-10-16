@@ -119,18 +119,6 @@ pub enum VaultError {
     Injected(&'static str),
 }
 
-impl From<argon2::Error> for VaultError {
-    fn from(e: argon2::Error) -> Self {
-        VaultError::Crypto(format!("argon2: {e}"))
-    }
-}
-
-impl From<argon2::password_hash::Error> for VaultError {
-    fn from(e: argon2::password_hash::Error) -> Self {
-        VaultError::Crypto(format!("argon2-hash: {e}"))
-    }
-}
-
 impl From<aes_gcm::Error> for VaultError {
     fn from(_: aes_gcm::Error) -> Self {
         // Не раскрываем детали AES-GCM, чтобы не помогать таймингу.

@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Download, FileText, RefreshCw, Upload } from "lucide-react";
+import { AlertTriangle, Download, FileText, RefreshCw } from "lucide-react";
 import { useTranslation, Trans } from 'react-i18next';
 import {
   apiBackupGetConfig,
   apiBackupSetConfig,
   apiBackupNow,
-  apiVaultExport,
   apiVaultRestore,
   apiPrepareFile,
   apiImportChromiumCsv,
@@ -15,7 +14,6 @@ import {
   type RejectedCsvRow,
 } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { isAuthCancelled, useSecurityConfirm } from "@/components/SecurityConfirm";
 import { cn } from "@/lib/cn";
@@ -80,8 +78,6 @@ export function SettingsBackup() {
   // `window.confirm` — нелокализованный системный диалог, который к
   // тому же блокирует поток webview. Подтверждение показываем своей карточкой.
   const [confirmRestore, setConfirmRestore] = useState(false);
-  const [exportPassword, setExportPassword] = useState("");
-  const [exporting, setExporting] = useState(false);
 
   const handleRestore = async () => {
     setConfirmRestore(false);
@@ -93,22 +89,6 @@ export function SettingsBackup() {
     } catch (e) {
       if (isAuthCancelled(e)) return;
       toast.error(sanitizeError(e, t('settingsBackup.restoreError')));
-    }
-  };
-
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const capability = await apiPrepareFile("export");
-      const password = exportPassword.trim() || undefined;
-      await authorized("export_vault", () => apiVaultExport(capability, password));
-      setExportPassword("");
-      toast.success(t('settingsBackup.exportSuccess'));
-    } catch (e) {
-      if (isAuthCancelled(e)) return;
-      toast.error(sanitizeError(e));
-    } finally {
-      setExporting(false);
     }
   };
 
@@ -216,30 +196,6 @@ export function SettingsBackup() {
       <p className="text-2xs text-white/40 leading-snug">
         {t('settingsBackup.scheduleHint')}
       </p>
-
-      <div className="border-t border-white/6" />
-      <p className="text-2xs text-white/50 leading-snug">
-        <strong>{t('settingsBackup.exportTitle')}</strong>{" "}
-        {t('settingsBackup.exportDesc')}
-      </p>
-      <Input
-        type="password"
-        autoComplete="new-password"
-        value={exportPassword}
-        onChange={(e) => setExportPassword(e.target.value)}
-        placeholder={t('settingsBackup.exportPasswordPlaceholder')}
-        disabled={exporting}
-      />
-      <Button
-        variant="secondary"
-        size="sm"
-        fullWidth
-        loading={exporting}
-        onClick={handleExport}
-        leftIcon={<Upload className="h-3.5 w-3.5" />}
-      >
-        {t('settingsBackup.exportBtn')}
-      </Button>
 
       <div className="border-t border-white/6" />
       <p className="text-2xs text-white/50 leading-snug">

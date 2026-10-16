@@ -162,7 +162,6 @@ pub fn run() {
             commands::vault::vault_lock,
             commands::vault::vault_lock_info,
             commands::vault::vault_change_pin,
-            commands::vault::vault_export,
             commands::file_grants::file_prepare,
             commands::vault::vault_import,
             commands::vault::vault_restore,

@@ -60,8 +60,6 @@ function actionText(t: TFunction, action: SecurityAction): string {
       return t("securityConfirm.action.disableRecovery");
     case "restore_backup":
       return t("securityConfirm.action.restoreBackup");
-    case "export_vault":
-      return t("securityConfirm.action.exportVault");
     case "change_backup_directory":
       return t("securityConfirm.action.changeBackupDirectory");
   }

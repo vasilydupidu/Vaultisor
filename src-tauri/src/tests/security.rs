@@ -73,16 +73,6 @@ async fn every_policy_change_requires_authorization() {
         crate::commands::vault::vault_restore_blocking(
             crate::commands::vault::ImportInput {
                 capability: "any".into(),
-                password: None,
-            },
-            &env.state,
-        )
-    ));
-    assert!(auth_required(
-        crate::commands::vault::vault_export_blocking(
-            crate::commands::vault::ExportInput {
-                capability: "any".into(),
-                password: None,
             },
             &env.state,
         )
