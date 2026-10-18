@@ -50,7 +50,7 @@ pub fn run() {
     }
 
     builder
-        // Логирование — только в файл рядом с %APPDATA%\Vaultisor\logs.
+        // Логирование — только в файл vault\logs рядом с .exe.
         // НИКАКИХ удалённых endpoint'ов.
         .plugin({
             // DEBUG: логи в файл ./vault/logs/Vaultisor.log рядом с .exe + stdout.
