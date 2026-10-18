@@ -36,8 +36,6 @@ pub struct VaultMetaRow {
     pub recovery_generation: u64,
     pub recovery_wrapped_master: Option<Vec<u8>>,
     pub recovery_state: RecoveryState,
-    /// Локальная доля A: координата и значение под DPAPI.
-    pub recovery_local: Option<(u8, Vec<u8>)>,
     /// После импорта ревизии баз нужно поднять выше подтверждённых; это
     /// делает первый вход, когда появляется мастер-ключ.
     pub data_rebase_pending: bool,
@@ -63,8 +61,8 @@ pub struct VaultMetaRow {
 /// ```
 ///
 /// `pending` — поколение создано, но пользователь не подтвердил, что сохранил
-/// доли B и C (или они израсходованы восстановлением, или бандл импорта не
-/// несёт долю A). Такое хранилище при следующем входе ведёт пользователя к
+/// части B и C (или они израсходованы восстановлением, или хранилище
+/// импортировано из копии). Такое хранилище при следующем входе ведёт к
 /// выдаче нового комплекта: потерянный ответ процесса не превращается в
 /// скрытую потерю восстановления. Доли B и C локально не хранятся никогда.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -154,8 +152,6 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
                 recovery_wrapped_master BLOB,
                 recovery_state TEXT NOT NULL DEFAULT 'disabled'
                     CHECK (recovery_state IN ('disabled', 'pending', 'active')),
-                recovery_local_x INTEGER,
-                recovery_local_y_dpapi BLOB,
                 data_rebase_pending INTEGER NOT NULL DEFAULT 0,
                 pin_change_request_id TEXT,
                 import_records_sha256 BLOB,

@@ -21,8 +21,8 @@
 
 | Версия | Поддержка |
 |--------|-----------|
-| 5.1.x  | ✅ |
-| ≤ 5.0.x | ❌ |
+| 5.2.x  | ✅ |
+| ≤ 5.1.x | ❌ |
 
 ### Модель угроз
 
@@ -55,8 +55,7 @@ Vaultisor — локальное приложение без сетевой по
 5. **Перенос хранилища на другую машину или в другую учётную запись Windows**
    — в том числе вместе с FIDO2-токеном. DPAPI (CurrentUser) и Device Secret
    привязывают данные, включая конверты FIDO2, к паре пользователь +
-   устройство. Легальный перенос — только восстановление по схеме Шамира
-   2-из-3.
+   устройство. Легальный перенос — только восстановление по частям B и C.
 6. **Незаметная правка или откат метаданных** (сброс задержки PIN, подмена
    факторов, папки копий, откат к старому снимку). Метаданные подписаны
    HMAC-SHA256 с монотонной эпохой; внешний checkpoint фиксирует эпоху и MAC.
@@ -103,9 +102,9 @@ Vaultisor — локальное приложение без сетевой по
    подменить базу до следующего входа, может скрыть именно это последнее
    неподтверждённое изменение. Закрыть окно полностью без неоткатываемого
    аппаратного счётчика (TPM NV) нельзя.
-7. **Скомпрометированные доли восстановления.** Две доли из трёх дают доступ
-   к мастер-ключу. Новое поколение отзывает старые доли, но смены мастер-ключа
-   (перешифрования всех данных) после компрометации в 5.1.0 нет.
+7. **Скомпрометированные части восстановления.** Части B и C вместе дают
+   доступ к мастер-ключу. Новое поколение отзывает старые части, но смены
+   мастер-ключа (перешифрования всех данных) после компрометации нет.
 8. **Гарантированное уничтожение импортированного CSV.** Перезапись
    случайными байтами не устраняет копии в журнале NTFS, теневых копиях и
    внутреннем пуле SSD. Это best-effort, а не шредер.
@@ -135,7 +134,7 @@ Checkpoint намеренно лежит вне папки хранилища: �
 | Целостность метаданных | HMAC-SHA256 | монотонная эпоха; все поля под MAC, включая состояние восстановления |
 | Внешний checkpoint | HMAC-SHA256 под DPAPI | эпоха, MAC метаданных, задержки PIN, ревизии и SHA-256 баз |
 | Проверка FIDO2 и Hello | ECDSA P-256 (ES256) | открытый ключ из регистрации под MAC |
-| Восстановление | Shamir над GF(2^8), 2 из 3 | доли восстанавливают ключ конверта, а не мастер-ключ |
+| Восстановление | Shamir над GF(2^8), части B и C — нужны обе | части восстанавливают ключ конверта, а не мастер-ключ; на устройстве части нет |
 | Привязка к устройству | TPM 2.0 RSA-2048 (Platform KSP) → HKDF | подпись фиксированного challenge |
 | Привязка к учётной записи | DPAPI CurrentUser | энтропия 32 байта на хранилище |
 
@@ -170,8 +169,8 @@ We aim to acknowledge within 5 business days, fix critical findings within
 
 | Version | Supported |
 |---------|-----------|
-| 5.1.x   | ✅ |
-| ≤ 5.0.x | ❌ |
+| 5.2.x   | ✅ |
+| ≤ 5.1.x | ❌ |
 
 ### Threat model
 
@@ -202,7 +201,7 @@ not defend against, stated plainly.
 5. **Moving the vault to another machine or Windows account** — including
    together with a FIDO2 token. DPAPI (CurrentUser) and the Device Secret bind
    the data, FIDO2 envelopes included, to the user+device pair. The supported
-   path is Shamir 2-of-3 recovery.
+   path is recovery with parts B and C.
 6. **Silent edits or rollback of the metadata** (clearing the PIN delay,
    swapping factors or the backup folder, rolling back to an older snapshot).
    Metadata is signed with HMAC-SHA256 and a monotonic epoch; the external
@@ -249,8 +248,8 @@ not defend against, stated plainly.
    attacker who swaps the database before the next sign-in can hide exactly
    that last unconfirmed change. Closing the window completely would need a
    non-rollbackable hardware counter (TPM NV).
-7. **Compromised recovery shares.** Two shares out of three give access to the
-   master key. A new generation revokes old shares, but 5.1.0 has no master-key
+7. **Compromised recovery parts.** Parts B and C together give access to the
+   master key. A new generation revokes old parts, but there is no master-key
    rotation (re-encrypting all data) after a compromise.
 8. **Guaranteed erasure of an imported CSV.** Overwriting with random bytes
    does not remove copies in the NTFS journal, shadow copies or SSD
@@ -282,7 +281,7 @@ share recovery.
 | Metadata integrity | HMAC-SHA256 | monotonic epoch; every field covered, recovery state included |
 | External checkpoint | HMAC-SHA256 under DPAPI | epoch, metadata MAC, PIN delay, database revisions and SHA-256 |
 | FIDO2 and Hello verification | ECDSA P-256 (ES256) | registered public key under the MAC |
-| Recovery | Shamir over GF(2^8), 2 of 3 | shares reconstruct an envelope key, not the master key |
+| Recovery | Shamir over GF(2^8), parts B and C — both required | the parts reconstruct an envelope key, not the master key; no part is stored on the device |
 | Device binding | TPM 2.0 RSA-2048 (Platform KSP) → HKDF | signature over a fixed challenge |
 | Account binding | DPAPI CurrentUser | 32-byte per-vault entropy |
 

@@ -20,9 +20,9 @@ use crate::storage::records::{FieldInput, FieldType, RecordInput};
 
 type CaseFuture = Pin<Box<dyn Future<Output = Case>>>;
 
-const CHANGED: &str = "sk-live-changed-after-backup";
+pub(super) const CHANGED: &str = "sk-live-changed-after-backup";
 
-fn entry(name: &str, value: &str) -> RecordInput {
+pub(super) fn entry(name: &str, value: &str) -> RecordInput {
     RecordInput {
         name: name.into(),
         project: None,
@@ -40,7 +40,7 @@ fn entry(name: &str, value: &str) -> RecordInput {
     }
 }
 
-fn add(env: &Env, web: bool, name: &str) -> crate::error::Result<String> {
+pub(super) fn add(env: &Env, web: bool, name: &str) -> crate::error::Result<String> {
     env.with_session(|master, records, web_db| {
         let db = if web { web_db } else { records };
         crate::storage::records::create_record(db, master, &entry(name, "secret"), None)
@@ -48,7 +48,7 @@ fn add(env: &Env, web: bool, name: &str) -> crate::error::Result<String> {
     .expect("vault must be unlocked")
 }
 
-fn count(env: &Env, web: bool) -> Option<usize> {
+pub(super) fn count(env: &Env, web: bool) -> Option<usize> {
     env.with_session(|_, records, web_db| {
         let db = if web { web_db } else { records };
         crate::storage::records::list_records(db, None, false, None, None, 100, 0)
@@ -84,7 +84,7 @@ fn set_canary(env: &Env, value: &str) {
 }
 
 /// Открытое хранилище: канарейка и один пароль сайта; доли подтверждены.
-async fn unlocked() -> (Env, Shares) {
+pub(super) async fn unlocked() -> (Env, Shares) {
     let (env, shares) = created().await;
     env.unlock(PIN).await.expect("unlock");
     add(&env, true, "site-A").expect("web entry");
@@ -416,7 +416,7 @@ fn same_device_import_case(plan: Option<(usize, Mode)>) -> CaseFuture {
         if !env.opens_with_pin(PIN).await {
             violations.push("импортированное хранилище не открывается PIN".into());
         } else if meta(&env).recovery_state != RecoveryState::Pending {
-            violations.push("без доли A восстановление обязано ждать нового комплекта".into());
+            violations.push("после импорта восстановление обязано ждать нового комплекта".into());
         }
         Case {
             steps,

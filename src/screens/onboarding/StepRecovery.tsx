@@ -266,8 +266,8 @@ export function StepRecovery({ createdShares, onCreate, onComplete }: Props) {
       <div className="shrink-0 pt-3 space-y-2">
         <Button
           onClick={async () => {
-            // Если пользователь выключил восстановление, стираем
-            // локальную часть A (которую backend уже сохранил при vault_create).
+            // Если пользователь выключил восстановление, удаляем конверт,
+            // который backend уже сохранил при vault_create.
             if (!enabled && !(await disableRecovery())) return;
             // Сохранение долей подтверждается явно: без подтверждения
             // хранилище остаётся «pending» и при следующем входе попросит
@@ -296,10 +296,9 @@ export function StepRecovery({ createdShares, onCreate, onComplete }: Props) {
             fullWidth
             size="sm"
             onClick={async () => {
-              // Пропуск оставлял локальную часть A на диске, а
-              // части B и C — нигде. Настройки показывали «восстановление
-              // настроено», хотя собрать кворум 2-из-3 было невозможно.
-              // Отзываем поколение, чтобы статус соответствовал реальности.
+              // Пропуск оставлял конверт восстановления, а части B и C —
+              // нигде: настройки показывали бы «настроено», хотя восстановить
+              // было бы нечем. Отзываем поколение, чтобы статус был честным.
               if (!(await disableRecovery())) return;
               onComplete();
             }}

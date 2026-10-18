@@ -11,7 +11,7 @@
 //   rng            — единый источник энтропии (OsRng + ChaCha20Rng resp).
 //   aead           — AES-256-GCM шифрование/дешифрование.
 //   kdf            — Argon2id для PIN, HKDF для derived keys.
-//   shamir         — Shamir Secret Sharing 2-of-3 на GF(256).
+//   shamir         — Shamir Secret Sharing на GF(256) (части B и C).
 //   device_secret  — TPM-привязанный 256-bit device secret (KEK через HKDF).
 //   master         — операции с мастер-ключом (генерация, обёртка PIN+DPAPI+DS).
 

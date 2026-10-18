@@ -28,7 +28,9 @@ pub fn create_recovery_generation(
     let wrapped = master.with_decrypted(|plain| {
         crate::crypto::aead::encrypt(&recovery_key, plain, &recovery_aad(generation))
     })?;
-    let shares = crate::crypto::shamir::split_secret(&*recovery_key, 2, 3)?;
+    // Две части, B и C, и нужны обе: на устройстве ничего не хранится,
+    // поэтому одной части вместе с этим ПК для восстановления не хватает.
+    let shares = crate::crypto::shamir::split_secret(&*recovery_key, 2, 2)?;
     Ok((shares, wrapped.to_bytes()))
 }
 
@@ -224,42 +226,22 @@ pub(crate) async fn restore_from_shares(
     let tpm_supported = state.os.tpm_supported();
     let params = crate::crypto::new_wrap_params();
     validate_secret_format(&input.new_pin, tpm_supported)?;
-    // Требуем минимум ОДНУ введённую пользователем долю: из одной локальной A
-    // восстановить нельзя (иначе доступ к устройству = доступ к хранилищу).
-    if input.shares_hex.is_empty() {
-        return Err(VaultError::Recovery(
-            "Введите хотя бы одну часть восстановления (B или C).".into(),
-        ));
-    }
-    let mut shares: Vec<Share> = input
+    // Нужны обе части, B и C, на любом ПК: на устройстве части нет, поэтому
+    // доступ к этому ПК вместе с одной частью хранилище не открывает.
+    let shares: Vec<Share> = input
         .shares_hex
         .iter()
         .map(|s| parse_share_hex(s))
         .collect::<Result<Vec<Share>>>()?;
+    let distinct: std::collections::BTreeSet<u8> = shares.iter().map(|s| s.x).collect();
+    if distinct.len() < 2 {
+        return Err(VaultError::Recovery(
+            "Введите обе части восстановления — B и C.".into(),
+        ));
+    }
 
     let db = MetaDb::open(&state.meta_path())?;
     let old = db.vault_load()?.ok_or(VaultError::NotInitialized)?;
-    // Доля A (сценарий «забыл PIN» на том же ПК) хранится под DPAPI: на чужом
-    // ПК или в чужой учётной записи не развернётся, тогда нужны B и C.
-    if let Some((ax, ay_dpapi)) = &old.recovery_local {
-        if let Ok(ay) =
-            crate::windows_api::dpapi::unprotect_with_entropy(ay_dpapi, &old.dpapi_entropy)
-        {
-            if !shares.iter().any(|s| s.x == *ax) {
-                shares.push(Share {
-                    x: *ax,
-                    y: ay.to_vec(),
-                });
-            }
-        }
-    }
-    if shares.len() < 2 {
-        return Err(VaultError::Recovery(
-            "Недостаточно частей восстановления. Доля A с этого ПК недоступна — \
-             введите две части (B и C)."
-                .into(),
-        ));
-    }
     let envelope = old.recovery_wrapped_master.clone().ok_or_else(|| {
         VaultError::Recovery(
             "Для этого хранилища восстановление не настроено: конверт мастер-ключа отсутствует."
@@ -338,8 +320,8 @@ pub(crate) async fn restore_from_shares(
 
 /// Собрать recovery-KEK из пары долей и открыть им конверт мастер-ключа.
 ///
-/// Схема 2-из-3 не обнаруживает испорченную долю, поэтому перебираются пары,
-/// и принимается первая, которая реально открывает конверт.
+/// Схема Шамира не обнаруживает испорченную часть, поэтому перебираются пары
+/// введённых частей, и принимается первая, которая реально открывает конверт.
 pub(crate) fn open_envelope(
     shares: &[Share],
     envelope: &[u8],
@@ -532,15 +514,8 @@ pub(crate) fn regenerate_recovery(state: &AppState) -> Result<RecoveryRegenerate
 
     let generation = meta.recovery_generation.saturating_add(1).max(1);
     let (shares, wrapped_master) = create_recovery_generation(&master, generation)?;
-    let (share_a, share_b, share_c) = (&shares[0], &shares[1], &shares[2]);
-    let y_dpapi = crate::windows_api::dpapi::protect_with_entropy(&share_a.y, &meta.dpapi_entropy)?;
-    db.replace_recovery(
-        &integrity_key,
-        generation,
-        &wrapped_master,
-        share_a.x,
-        &y_dpapi,
-    )?;
+    let (share_b, share_c) = (&shares[0], &shares[1]);
+    db.replace_recovery(&integrity_key, generation, &wrapped_master)?;
     log::info!("recovery_regenerate: generation {generation} created, awaiting acknowledgement");
     Ok(RecoveryRegenerateOutput {
         generation,
@@ -573,7 +548,7 @@ pub(crate) fn acknowledge_recovery(state: &AppState, generation: u64) -> Result<
     Ok(())
 }
 
-/// Отключить восстановление: отозвать поколение, удалить конверт и долю A.
+/// Отключить восстановление: отозвать поколение и удалить конверт.
 #[tauri::command]
 pub fn recovery_disable(state: State<'_, AppState>) -> Result<()> {
     disable_recovery(&state)

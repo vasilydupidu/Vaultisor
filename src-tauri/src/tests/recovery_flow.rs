@@ -223,6 +223,37 @@ async fn recovery_closes_the_session_and_rotates_every_key() {
     assert_eq!(env.read_canary().as_deref(), Some(CANARY));
 }
 
+/// Одной части не хватает даже на том ПК, где создано хранилище: на
+/// устройстве части нет, нужны обе — B и C. Повтор одной и той же части
+/// второй не считается. Отказ ничего не меняет.
+#[tokio::test]
+async fn one_share_is_not_enough_on_the_same_device() {
+    let (mut env, shares) = created().await;
+    let before = meta(&env);
+    for parts in [
+        vec![shares.b.clone()],
+        vec![shares.c.clone()],
+        vec![shares.b.clone(), shares.b.clone()],
+    ] {
+        let input = RestoreInput {
+            shares_hex: parts,
+            new_pin: NEW_PIN.into(),
+        };
+        assert!(
+            crate::commands::recovery::restore_from_shares(&env.state, input)
+                .await
+                .is_err()
+        );
+    }
+    let after = meta(&env);
+    assert_eq!(after.wrapped_master_dpapi, before.wrapped_master_dpapi);
+    assert_eq!(after.security_epoch, before.security_epoch);
+    assert!(
+        env.opens_with_pin(PIN).await,
+        "старый PIN по-прежнему открывает"
+    );
+}
+
 // ------------------------------------------------------------ новое поколение
 
 fn recovery_regenerate_case(plan: Option<(usize, Mode)>) -> CaseFuture {

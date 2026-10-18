@@ -156,21 +156,20 @@ pub async fn inspect(env: &Env) -> (Option<Observed>, Vec<String>) {
         state => violations.push(format!("режим защиты рассогласован = {state:?}")),
     }
 
-    // Восстановление согласовано со своим состоянием:
-    // active — конверт и доля A; disabled — ни того, ни другого;
-    // pending — доля A только вместе с конвертом.
+    // Восстановление согласовано со своим состоянием: active — с конвертом,
+    // disabled — без него; pending бывает и без конверта (после восстановления
+    // новый комплект выдаётся при входе).
     {
         use crate::storage::meta_db::RecoveryState;
         let envelope = meta.recovery_wrapped_master.is_some();
-        let local_share = meta.recovery_local.is_some();
         let consistent = match meta.recovery_state {
-            RecoveryState::Active => envelope && local_share,
-            RecoveryState::Disabled => !envelope && !local_share,
-            RecoveryState::Pending => envelope || !local_share,
+            RecoveryState::Active => envelope,
+            RecoveryState::Disabled => !envelope,
+            RecoveryState::Pending => true,
         };
         if !consistent {
             violations.push(format!(
-                "восстановление рассогласовано: {:?}, конверт={envelope}, доля A={local_share}",
+                "восстановление рассогласовано: {:?}, конверт={envelope}",
                 meta.recovery_state
             ));
         }

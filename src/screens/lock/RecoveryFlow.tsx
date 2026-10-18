@@ -78,15 +78,9 @@ export function RecoveryFlow({
     const shares: string[] = [];
     if (shareUsb) shares.push(shareUsb);
     if (shareManual.trim()) shares.push(shareManual.trim());
-    // На том же ПК («забыл PIN») доля A подгружается на backend автоматически —
-    // достаточно одной введённой части. На другом устройстве нужны обе (B+C).
-    const minShares = reason === "forgot-pin" ? 1 : 2;
-    if (shares.length < minShares) {
-      toast.error(
-        minShares === 1
-          ? t('recoveryFlow.oneShareRequired')
-          : t('recoveryFlow.twoSharesRequired'),
-      );
+    // Нужны обе части, B и C, на любом устройстве: на ПК части нет.
+    if (shares.length < 2) {
+      toast.error(t('recoveryFlow.twoSharesRequired'));
       return;
     }
     setBusy(true);

@@ -230,7 +230,9 @@ mod tests {
     fn user_facing_messages_are_preserved() {
         let json = serialized(VaultError::BadInput("PIN короче 11 символов".into()));
         assert!(json.contains("PIN"));
-        let json = serialized(VaultError::Recovery("Введите хотя бы одну часть".into()));
+        let json = serialized(VaultError::Recovery(
+            "Введите обе части восстановления".into(),
+        ));
         assert!(json.contains("Recovery") || json.contains("часть"));
     }
 }

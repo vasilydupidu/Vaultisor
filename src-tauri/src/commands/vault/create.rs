@@ -193,9 +193,7 @@ async fn stage_and_publish(
     let generation = 1u64;
     let (shares, recovery_wrapped_master) =
         crate::commands::recovery::create_recovery_generation(&master, generation)?;
-    let (share_a, share_b, share_c) = (&shares[0], &shares[1], &shares[2]);
-    let share_a_dpapi =
-        crate::windows_api::dpapi::protect_with_entropy(&share_a.y, &*dpapi_entropy)?;
+    let (share_b, share_c) = (&shares[0], &shares[1]);
 
     {
         let db = MetaDb::open_staged(&staging.meta_path(), &state.data_dir)?;
@@ -212,13 +210,7 @@ async fn stage_and_publish(
             db.save_device_secret(&integrity_key, &data.tpm_key_name, &data.encrypted_blob)?;
         }
         db.save_argon2_params(&integrity_key, params.m_cost, params.t_cost, params.p_cost)?;
-        db.replace_recovery(
-            &integrity_key,
-            generation,
-            &recovery_wrapped_master,
-            share_a.x,
-            &share_a_dpapi,
-        )?;
+        db.replace_recovery(&integrity_key, generation, &recovery_wrapped_master)?;
     }
 
     // Базы записей создаются пустыми тем же ключом, что будет у сессии.

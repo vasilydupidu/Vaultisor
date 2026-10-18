@@ -35,7 +35,7 @@ in `README.md` (both languages) and `.github/release_notes.md`.
 `src/lib/release.test.ts` fails if any of them lags behind.
 
 Until the first public release, incompatible format changes ship as a minor
-version without migrations (as 5.1.0 did); afterwards the major rule applies.
+version without migrations (as the 5.x versions do); afterwards the major rule applies.
 
 ## 2. Gates (all blocking)
 

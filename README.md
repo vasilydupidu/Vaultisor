@@ -11,7 +11,7 @@
 паролей сайтов. Работает без сети, облака, учётных записей и телеметрии.
 Данные привязаны к устройству (TPM 2.0) и учётной записи Windows (DPAPI).
 
-Текущая версия — **5.1.0**. Требования: Windows 10 1903+ или Windows 11,
+Текущая версия — **5.2.0**. Требования: Windows 10 1903+ или Windows 11,
 TPM 2.0 (без TPM — режим мастер-пароля от 15 символов).
 
 ### 🔐 Вход и защита
@@ -66,9 +66,10 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
 
 ### 🧩 Восстановление и резервные копии
 
-- **Восстановление по схеме Шамира 2-из-3.** Части B (файл) и C (файл или
-  копия) хранит пользователь, часть A — на устройстве под DPAPI. Доли
-  восстанавливают ключ конверта, а не сам мастер-ключ; новое поколение
+- **Восстановление по схеме Шамира: части B и C.** Обе части хранит
+  пользователь — раздельно; на устройстве части нет, поэтому одна часть
+  хранилище не открывает ни на этом ПК, ни на другом. Части восстанавливают
+  ключ конверта, а не сам мастер-ключ; новое поколение
   отзывает прежнее. Поколение считается действующим только после явного
   подтверждения, что обе части сохранены: если комплект не дошёл до
   пользователя, при следующем входе будет выдан новый.
@@ -101,17 +102,19 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
   открывается только восстановлением по долям — это свойство привязки к
   устройству, а не сбой.
 
-### 🚀 Что нового в версии 5.1.0
+### 🚀 Что нового в версии 5.2.0
 
-> Хранилища 5.0.x не открываются: схема метаданных и формат checkpoint'а
-> изменены, миграции нет — 5.1.0 создаёт хранилище заново.
+> Хранилища предыдущих версий не открываются: схема метаданных и формат
+> checkpoint'а изменены, миграции нет — 5.2.0 создаёт хранилище заново.
 
 Консолидация безопасности и надёжности: атомарность всех операций,
 проверенная отказами; подтверждение PIN для изменений безопасности;
 нарастающая задержка вместо блокировки; FIDO2 с привязкой к устройству и
 полной проверкой ответов; защита баз от отката и подмены страниц;
-переработанные восстановление, restore и импорт; релизный pipeline
-«сборка → неизменяемый артефакт → публикация».
+восстановление только по обеим частям, B и C; restore, который возвращает
+только данные; более быстрый ввод PIN (Argon2id на нескольких ядрах);
+релизный pipeline «сборка → неизменяемый артефакт → attestation →
+публикация». Отдельный экспорт убран: копию создаёт бэкап.
 
 ### 🛠️ Технологии
 
@@ -150,7 +153,7 @@ secrets locally: API keys, tokens, server credentials and website passwords.
 It works with no network, no cloud, no accounts and no telemetry. Data is
 bound to the device (TPM 2.0) and to the Windows account (DPAPI).
 
-Current version: **5.1.0**. Requires Windows 10 1903+ or Windows 11 with
+Current version: **5.2.0**. Requires Windows 10 1903+ or Windows 11 with
 TPM 2.0 (without a TPM, a master password of 15+ characters is used).
 
 ### 🔐 Sign-in and protection
@@ -205,9 +208,10 @@ TPM 2.0 (without a TPM, a master password of 15+ characters is used).
 
 ### 🧩 Recovery and backups
 
-- **Shamir 2-of-3 recovery.** The user keeps parts B (a file) and C (a file
-  or a copy); part A stays on the device under DPAPI. The shares reconstruct
-  an envelope key, not the master key itself; a new generation revokes the
+- **Shamir recovery with parts B and C.** The user keeps both parts, apart
+  from each other; nothing is stored on the device, so one part does not open
+  the vault on this PC or any other. The parts reconstruct an envelope key,
+  not the master key itself; a new generation revokes the
   previous one. A generation becomes active only after the user confirms that
   both parts were saved: if a set never reached the user, a new one is issued
   at the next sign-in.
@@ -238,16 +242,18 @@ TPM 2.0 (without a TPM, a master password of 15+ characters is used).
 - **Moving the `vault` folder** to another PC or Windows account opens it only
   through share recovery — this is device binding, not a fault.
 
-### 🚀 What's new in v5.1.0
+### 🚀 What's new in v5.2.0
 
-> Vaults from 5.0.x do not open: the metadata schema and checkpoint format
-> changed, with no migration — 5.1.0 creates the vault from scratch.
+> Vaults from earlier versions do not open: the metadata schema and checkpoint
+> format changed, with no migration — 5.2.0 creates the vault from scratch.
 
 A security and reliability consolidation: atomicity of every operation,
 verified by fault injection; PIN confirmation for security changes; a growing
 delay instead of lockout; device-bound FIDO2 with full response verification;
-rollback and page-tampering detection for the databases; reworked recovery,
-restore and import; a "build → immutable artifact → publish" release pipeline.
+rollback and page-tampering detection for the databases; recovery that needs
+both parts, B and C; a restore that brings back data only; faster PIN entry
+(Argon2id on several cores); a "build → immutable artifact → attestation →
+publish" release pipeline. The separate export is gone: a backup makes the copy.
 
 ### 🛠️ Tech stack
 

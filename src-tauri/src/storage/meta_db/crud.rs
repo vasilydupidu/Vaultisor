@@ -152,7 +152,7 @@ impl MetaDb {
                               recovery_generation, recovery_wrapped_master, security_epoch,
                               hello_key_credential_name, hello_key_credential_public_key,
                               enable_generator, last_op_id, pin_last_failure,
-                              recovery_state, recovery_local_x, recovery_local_y_dpapi,
+                              recovery_state,
                               data_rebase_pending, pin_change_request_id,
                               import_records_sha256, import_web_sha256
                        FROM vault_meta WHERE id = 1"#,
@@ -190,18 +190,11 @@ impl MetaDb {
                                         rusqlite::types::Type::Text,
                                     )
                                 })?,
-                            recovery_local: match (
-                                row.get::<_, Option<i64>>(27)?,
-                                row.get::<_, Option<Vec<u8>>>(28)?,
-                            ) {
-                                (Some(x), Some(y)) => Some((x as u8, y)),
-                                _ => None,
-                            },
-                            data_rebase_pending: row.get::<_, i64>(29)? != 0,
-                            pin_change_request_id: row.get(30)?,
+                            data_rebase_pending: row.get::<_, i64>(27)? != 0,
+                            pin_change_request_id: row.get(28)?,
                             imported_snapshot: match (
-                                row.get::<_, Option<Vec<u8>>>(31)?,
-                                row.get::<_, Option<Vec<u8>>>(32)?,
+                                row.get::<_, Option<Vec<u8>>>(29)?,
+                                row.get::<_, Option<Vec<u8>>>(30)?,
                             ) {
                                 (Some(records), Some(web)) => {
                                     match (records.try_into(), web.try_into()) {
@@ -550,7 +543,6 @@ impl MetaDb {
                            hello_key_credential_public_key = NULL,
                            recovery_generation = recovery_generation + 1,
                            recovery_wrapped_master = NULL,
-                           recovery_local_x = NULL, recovery_local_y_dpapi = NULL,
                            recovery_state = 'pending',
                            failed_pin_attempts = 0, pin_next_allowed = 0, pin_last_failure = 0,
                            data_rebase_pending = 0,
@@ -633,7 +625,6 @@ impl MetaDb {
                            recovery_state = CASE
                                WHEN recovery_wrapped_master IS NULL THEN 'disabled'
                                ELSE 'pending' END,
-                           recovery_local_x = NULL, recovery_local_y_dpapi = NULL,
                            data_rebase_pending = 1,
                            import_records_sha256 = ?6, import_web_sha256 = ?7,
                            last_op_id = ?5
@@ -751,36 +742,27 @@ impl MetaDb {
         })
     }
 
-    /// Новое поколение восстановления: конверт, локальная доля A и номер —
-    /// одной транзакцией. Прежнее поколение этим же commit'ом отозвано.
-    /// Поколение `pending`, пока пользователь не подтвердит, что сохранил
-    /// доли B и C.
+    /// Новое поколение восстановления: конверт и номер — одной транзакцией.
+    /// Прежнее поколение этим же commit'ом отозвано. Поколение `pending`, пока
+    /// пользователь не подтвердит, что сохранил части B и C.
     pub fn replace_recovery(
         &self,
         integrity_key: &[u8; 32],
         generation: u64,
         wrapped_master: &[u8],
-        local_x: u8,
-        local_y_dpapi: &[u8],
     ) -> Result<()> {
         self.update_meta_secure(integrity_key, |c| {
             c.execute(
                 "UPDATE vault_meta SET recovery_generation = ?1, recovery_wrapped_master = ?2, \
-                 recovery_local_x = ?3, recovery_local_y_dpapi = ?4, recovery_state = 'pending' \
-                 WHERE id = 1",
-                params![
-                    generation as i64,
-                    wrapped_master,
-                    local_x as i64,
-                    local_y_dpapi
-                ],
+                 recovery_state = 'pending' WHERE id = 1",
+                params![generation as i64, wrapped_master],
             )?;
             Ok(())
         })
     }
 
     /// Пользователь подтвердил, что сохранил доли поколения `generation`.
-    /// Подтверждается только текущее поколение с конвертом и долей A.
+    /// Подтверждается только текущее поколение с конвертом.
     /// Повтор подтверждения того же поколения — успех без мутации.
     pub fn acknowledge_recovery(&self, integrity_key: &[u8; 32], generation: u64) -> Result<()> {
         let meta = self.vault_load()?.ok_or(VaultError::NotInitialized)?;
@@ -793,7 +775,7 @@ impl MetaDb {
             let changed = c.execute(
                 "UPDATE vault_meta SET recovery_state = 'active' \
                  WHERE id = 1 AND recovery_state = 'pending' AND recovery_generation = ?1 \
-                   AND recovery_wrapped_master IS NOT NULL AND recovery_local_x IS NOT NULL",
+                   AND recovery_wrapped_master IS NOT NULL",
                 params![generation as i64],
             )?;
             if changed != 1 {
@@ -805,21 +787,16 @@ impl MetaDb {
         })
     }
 
-    /// Выключить восстановление: отозвать поколение, удалить конверт и долю A.
+    /// Выключить восстановление: отозвать поколение и удалить конверт.
     pub fn clear_recovery(&self, integrity_key: &[u8; 32]) -> Result<()> {
         self.update_meta_secure(integrity_key, |c| {
             c.execute(
                 "UPDATE vault_meta SET recovery_generation = recovery_generation + 1, \
-                 recovery_wrapped_master = NULL, recovery_local_x = NULL, \
-                 recovery_local_y_dpapi = NULL, recovery_state = 'disabled' WHERE id = 1",
+                 recovery_wrapped_master = NULL, recovery_state = 'disabled' WHERE id = 1",
                 [],
             )?;
             Ok(())
         })
-    }
-
-    pub fn load_recovery_local(&self) -> Result<Option<(u8, Vec<u8>)>> {
-        Ok(self.vault_load()?.and_then(|meta| meta.recovery_local))
     }
 
     /// Состояние задержек после неверного PIN. Защищённая мутация: MAC,
@@ -1145,8 +1122,6 @@ struct MetaForMac {
     recovery_generation: u64,
     recovery_wrapped_master: Option<Vec<u8>>,
     recovery_state: String,
-    recovery_local_x: Option<u8>,
-    recovery_local_y_dpapi: Option<Vec<u8>>,
     data_rebase_pending: bool,
     pin_change_request_id: Option<String>,
     import_records_sha256: Option<Vec<u8>>,
@@ -1232,7 +1207,7 @@ fn read_meta_for_mac(c: &Connection) -> Result<MetaForMac> {
                   hello_key_credential_name, hello_key_credential_public_key,
                   ui_language, enable_health_check, enable_password_history,
                   enable_generator, last_op_id, pin_last_failure,
-                  recovery_state, recovery_local_x, recovery_local_y_dpapi,
+                  recovery_state,
                   data_rebase_pending, pin_change_request_id,
                   import_records_sha256, import_web_sha256
            FROM vault_meta WHERE id = 1"#,
@@ -1259,12 +1234,10 @@ fn read_meta_for_mac(c: &Connection) -> Result<MetaForMac> {
                 recovery_generation: r.get::<_, i64>(15)?.max(0) as u64,
                 recovery_wrapped_master: r.get(16)?,
                 recovery_state: r.get(26)?,
-                recovery_local_x: r.get::<_, Option<i64>>(27)?.map(|x| x as u8),
-                recovery_local_y_dpapi: r.get(28)?,
-                data_rebase_pending: r.get::<_, i64>(29)? != 0,
-                pin_change_request_id: r.get(30)?,
-                import_records_sha256: r.get(31)?,
-                import_web_sha256: r.get(32)?,
+                data_rebase_pending: r.get::<_, i64>(27)? != 0,
+                pin_change_request_id: r.get(28)?,
+                import_records_sha256: r.get(29)?,
+                import_web_sha256: r.get(30)?,
                 security_epoch: r.get::<_, i64>(17)?.max(0) as u64,
                 hello_key_credential_name: r.get(18)?,
                 hello_key_credential_public_key: r.get(19)?,
@@ -1301,8 +1274,6 @@ fn mac_inputs_from(row: &MetaForMac) -> MacInputs<'_> {
         recovery_generation: row.recovery_generation,
         recovery_wrapped_master: row.recovery_wrapped_master.as_deref(),
         recovery_state: &row.recovery_state,
-        recovery_local_x: row.recovery_local_x,
-        recovery_local_y_dpapi: row.recovery_local_y_dpapi.as_deref(),
         data_rebase_pending: row.data_rebase_pending,
         pin_change_request_id: row.pin_change_request_id.as_deref(),
         import_records_sha256: row.import_records_sha256.as_deref(),
@@ -1588,8 +1559,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let old_key = [0x75u8; 32];
         let db = sealed_vault(dir.path(), &old_key);
-        db.replace_recovery(&old_key, 1, b"envelope", 1, b"share-a")
-            .unwrap();
+        db.replace_recovery(&old_key, 1, b"envelope").unwrap();
         db.set_backoff(
             &old_key,
             crate::auth::backoff::BackoffState {
@@ -1632,7 +1602,7 @@ mod tests {
         );
         let meta = db.vault_load().unwrap().unwrap();
         assert_eq!(meta.recovery_state, super::super::RecoveryState::Pending);
-        assert!(meta.recovery_wrapped_master.is_none() && meta.recovery_local.is_none());
+        assert!(meta.recovery_wrapped_master.is_none());
         assert_eq!(
             meta.recovery_generation, 2,
             "израсходованное поколение отозвано"
@@ -1644,15 +1614,14 @@ mod tests {
     }
 
     /// Импорт на том же устройстве: эпоха выше checkpoint'а, задержки PIN —
-    /// строжайшие из снимка и checkpoint'а, доли A нет — восстановление ждёт
-    /// нового комплекта.
+    /// строжайшие из снимка и checkpoint'а, восстановление ждёт нового
+    /// комплекта частей.
     #[test]
     fn import_reseal_never_weakens_the_checkpoint_state() {
         let dir = tempfile::tempdir().unwrap();
         let key = [0x78u8; 32];
         let live = sealed_vault(dir.path(), &key);
-        live.replace_recovery(&key, 1, b"envelope", 1, b"share-a")
-            .unwrap();
+        live.replace_recovery(&key, 1, b"envelope").unwrap();
         let snapshot = dir.path().join("snapshot.db");
         live.backup_to(&snapshot).unwrap();
         for failures in 1..=8 {
@@ -1678,7 +1647,6 @@ mod tests {
         assert!(meta.security_epoch > live_epoch);
         assert_eq!(meta.backoff.failures, 8, "задержки не уменьшились");
         assert_eq!(meta.recovery_state, super::super::RecoveryState::Pending);
-        assert!(meta.recovery_local.is_none());
         imported.verify_meta_integrity(&key).unwrap();
         assert!(meta.data_rebase_pending, "ревизии баз поднимет первый вход");
         assert_eq!(meta.imported_snapshot, Some(([1; 32], [2; 32])));
@@ -1732,8 +1700,7 @@ mod tests {
             RecoveryState::Disabled
         );
 
-        db.replace_recovery(&key, 1, b"envelope-1", 1, b"share-a")
-            .unwrap();
+        db.replace_recovery(&key, 1, b"envelope-1").unwrap();
         let meta = db.vault_load().unwrap().unwrap();
         assert_eq!(meta.recovery_generation, 1);
         assert_eq!(meta.recovery_state, RecoveryState::Pending);
@@ -1741,7 +1708,6 @@ mod tests {
             meta.recovery_wrapped_master.as_deref(),
             Some(&b"envelope-1"[..])
         );
-        assert_eq!(db.load_recovery_local().unwrap().unwrap().0, 1);
         db.verify_meta_integrity(&key).unwrap();
 
         // Подтверждается только текущее поколение.
@@ -1762,21 +1728,20 @@ mod tests {
         assert_eq!(meta.recovery_generation, 2, "поколение обязано вырасти");
         assert_eq!(meta.recovery_state, RecoveryState::Disabled);
         assert!(meta.recovery_wrapped_master.is_none());
-        assert!(db.load_recovery_local().unwrap().is_none());
         db.verify_meta_integrity(&key).unwrap();
     }
 
-    /// Доля A под MAC: подмена её мимо приложения обнаруживается.
+    /// Конверт восстановления под MAC: подмена его мимо приложения
+    /// обнаруживается.
     #[test]
-    fn local_share_is_authenticated() {
+    fn recovery_envelope_is_authenticated() {
         let dir = tempfile::tempdir().unwrap();
         let key = [0x6Au8; 32];
         let db = sealed_vault(dir.path(), &key);
-        db.replace_recovery(&key, 1, b"envelope-1", 1, b"share-a")
-            .unwrap();
+        db.replace_recovery(&key, 1, b"envelope-1").unwrap();
         db.with_conn(|c| {
             c.execute(
-                "UPDATE vault_meta SET recovery_local_x = 2 WHERE id = 1",
+                "UPDATE vault_meta SET recovery_wrapped_master = x'00' WHERE id = 1",
                 [],
             )?;
             Ok(())

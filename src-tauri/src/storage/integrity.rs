@@ -45,9 +45,6 @@ pub struct MacInputs<'a> {
     pub recovery_wrapped_master: Option<&'a [u8]>,
     /// Состояние восстановления: `disabled`, `pending` или `active`.
     pub recovery_state: &'a str,
-    /// Локальная доля A (координата и DPAPI-обёртка значения).
-    pub recovery_local_x: Option<u8>,
-    pub recovery_local_y_dpapi: Option<&'a [u8]>,
     pub data_rebase_pending: bool,
     pub pin_change_request_id: Option<&'a str>,
     pub import_records_sha256: Option<&'a [u8]>,
@@ -92,15 +89,6 @@ pub fn compute_meta_mac(integrity_key: &[u8; 32], inputs: &MacInputs<'_>) -> [u8
     update_u64(&mut mac, inputs.recovery_generation);
     update_optional_blob(&mut mac, inputs.recovery_wrapped_master);
     update_blob(&mut mac, inputs.recovery_state.as_bytes());
-    update_optional_blob(
-        &mut mac,
-        inputs
-            .recovery_local_x
-            .map(|x| [x])
-            .as_ref()
-            .map(|x| &x[..]),
-    );
-    update_optional_blob(&mut mac, inputs.recovery_local_y_dpapi);
     update_bool(&mut mac, inputs.data_rebase_pending);
     update_optional_str(&mut mac, inputs.pin_change_request_id);
     update_optional_blob(&mut mac, inputs.import_records_sha256);
@@ -182,8 +170,6 @@ mod tests {
             recovery_generation: 3,
             recovery_wrapped_master: Some(b"recovery-envelope"),
             recovery_state: "active",
-            recovery_local_x: Some(1),
-            recovery_local_y_dpapi: Some(b"share-a"),
             data_rebase_pending: false,
             pin_change_request_id: Some("pin-change-1"),
             import_records_sha256: Some(b"records-digest"),
@@ -268,14 +254,6 @@ mod tests {
             Box::new(|i| i.recovery_wrapped_master = None),
         ));
         mutations.push(("recovery_state", Box::new(|i| i.recovery_state = "pending")));
-        mutations.push((
-            "recovery_local_x",
-            Box::new(|i| i.recovery_local_x = Some(2)),
-        ));
-        mutations.push((
-            "recovery_local_y_dpapi",
-            Box::new(|i| i.recovery_local_y_dpapi = None),
-        ));
         mutations.push((
             "data_rebase_pending",
             Box::new(|i| i.data_rebase_pending = true),

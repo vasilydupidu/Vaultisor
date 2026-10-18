@@ -10,7 +10,7 @@
 ([`docs/SDLC.md`](./SDLC.md), раздел 4, «Запуск»).
 
 ### Шаг 1. Обновить версию и документы
-Версия (например, `5.1.0`) указывается в `package.json`, `src-tauri/Cargo.toml`
+Версия (например, `5.2.0`) указывается в `package.json`, `src-tauri/Cargo.toml`
 и `src-tauri/tauri.conf.json`, затем синхронизируются `package-lock.json` и
 `Cargo.lock`. Там же обновляются changelog в `README.md`, таблица в
 `SECURITY.md` и `.github/release_notes.md` — `src/lib/release.test.ts` не даст
@@ -22,9 +22,9 @@
 
 ### Шаг 3. Тег и ручной запуск релиза
 ```bash
-git tag -a v5.1.0 -m "Vaultisor v5.1.0"
-git push origin v5.1.0
-gh workflow run release.yml --ref v5.1.0 -f publish=true
+git tag -a v5.2.0 -m "Vaultisor v5.2.0"
+git push origin v5.2.0
+gh workflow run release.yml --ref v5.2.0 -f publish=true
 gh run watch
 ```
 

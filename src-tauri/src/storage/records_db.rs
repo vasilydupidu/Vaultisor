@@ -9,7 +9,7 @@
 // Master_key получается одним из путей:
 //   - cascade unlock через PIN (DPAPI + Argon2id);
 //   - cascade unlock через Hello+TPM;
-//   - Shamir-восстановление (любые 2 из 3 долей).
+//   - Shamir-восстановление (обе части, B и C).
 //
 // На чужой машине: cascade fail (DPAPI) → frontend открывает Recovery →
 // Shamir B+C → master_key → derive sqlcipher_key → open records.db. Записи

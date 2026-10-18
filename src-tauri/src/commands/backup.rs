@@ -356,12 +356,12 @@ pub(crate) fn snapshot_bundle_parts(state: &AppState) -> Result<(Vec<u8>, Vec<u8
     ))
 }
 
-/// Санитизированная копия meta.db для экспорта/бэкапа.
+/// Санитизированная копия meta.db для бэкапа.
 ///
 /// Из снимка убирается всё, что привязано к конкретной машине и при этом
-/// является фактором доступа: локальная доля Shamir (DPAPI), обёртки FIDO2 и
-/// платформенный credential Windows Hello. Бэкап — это recovery-путь: он
-/// разворачивается по кворуму 2-из-3 и по PIN, а не по железу исходного ПК.
+/// является фактором доступа: обёртки FIDO2 и платформенный credential
+/// Windows Hello. Бэкап — это recovery-путь: он разворачивается по частям
+/// B и C и по PIN, а не по железу исходного ПК.
 ///
 /// Обёртки, бесполезные вне машины (`device_secret_tpm_blob`,
 /// `integrity_key_dpapi`), остаются: без TPM/DPAPI того же ПК они не
@@ -393,9 +393,7 @@ pub(crate) fn sanitize_meta_for_export_with_key(
                 use_windows_hello = 0,
                 require_auth_for_copy = 0,
                 hello_key_credential_name = NULL,
-                hello_key_credential_public_key = NULL,
-                recovery_local_x = NULL,
-                recovery_local_y_dpapi = NULL
+                hello_key_credential_public_key = NULL
             WHERE id = 1;
             "#,
         )
