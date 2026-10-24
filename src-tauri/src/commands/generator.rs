@@ -96,8 +96,15 @@ pub fn generator_create(
     input: GeneratorCreateInput,
     state: State<'_, AppState>,
 ) -> Result<GeneratedSecretMeta> {
-    require_enabled(&state)?;
-    with_unlocked(&state, |master, db| {
+    create_generated(&state, input)
+}
+
+pub(crate) fn create_generated(
+    state: &AppState,
+    input: GeneratorCreateInput,
+) -> Result<GeneratedSecretMeta> {
+    require_enabled(state)?;
+    with_unlocked(state, |master, db| {
         generated::insert(db, master, input.kind, &input.value)
     })
 }
@@ -110,8 +117,12 @@ pub struct GeneratorDeleteInput {
 
 #[tauri::command]
 pub fn generator_delete(input: GeneratorDeleteInput, state: State<'_, AppState>) -> Result<usize> {
-    require_enabled(&state)?;
-    with_unlocked(&state, |_master, db| generated::delete_many(db, &input.ids))
+    delete_generated(&state, input)
+}
+
+pub(crate) fn delete_generated(state: &AppState, input: GeneratorDeleteInput) -> Result<usize> {
+    require_enabled(state)?;
+    with_unlocked(state, |_master, db| generated::delete_many(db, &input.ids))
 }
 
 /// Скопировать выдачу в буфер обмена.
@@ -120,9 +131,15 @@ pub fn generator_delete(input: GeneratorDeleteInput, state: State<'_, AppState>)
 /// защищённым путём, что и для секретов записей — с маркерами исключения из
 /// истории Windows и автоочисткой по таймеру. Отдать секрет наружу только для
 /// того, чтобы фронтенд положил его в буфер сам, означало бы обойти эту защиту.
+/// Тот же и гейт: при включённом подтверждении копирования нужен Hello.
 #[tauri::command]
-pub fn generator_copy(id: String, state: State<'_, AppState>, app: tauri::AppHandle) -> Result<()> {
+pub async fn generator_copy(
+    id: String,
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<()> {
     require_enabled(&state)?;
+    crate::commands::auth_gate::require_copy_view_auth(&state).await?;
     let clear_after = state.settings.lock().clipboard_clear_seconds;
     // Мьютекс сессии отпускается до работы с буфером: clipboard-операции
     // синхронны и держать под ними состояние незачем.

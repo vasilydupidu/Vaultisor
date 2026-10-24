@@ -7,7 +7,7 @@ license = "GPL-3.0-only"
 # На crates.io не публикуется: это приложение и его внутренний крейт.
 publish = false
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.96"
 
 
 [lib]
@@ -24,7 +24,6 @@ tauri-build = { version = "2.0", features = [] }
 # `--features devtools` (см. [features] ниже).
 tauri = { version = "2.1", features = ["tray-icon"] }
 tauri-plugin-dialog = "2.2"
-tauri-plugin-fs = "2.2"
 # Один экземпляр приложения: повторный запуск .exe не стартует второй процесс,
 # а фокусирует уже открытое окно (desktop-only).
 tauri-plugin-single-instance = "2.2"
@@ -43,7 +42,6 @@ sha2 = "0.10"
 hmac = "0.12"
 zeroize = { version = "1.8", features = ["derive"] }
 rand = "0.8"
-rand_chacha = "0.3"
 subtle = "2.6"
 hex = "0.4"
 base64 = "0.22"
@@ -58,7 +56,6 @@ rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl",
 
 # === Утилиты ===
 thiserror = "2.0"
-anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.11", features = ["v4", "serde"] }
 tempfile = "3.13"
@@ -97,17 +94,13 @@ windows = { version = "0.62", features = [
     "Win32_System_Com",
     # TBS — определение версии TPM (2.0 vs 1.x) для гейта Device Secret.
     "Win32_System_TpmBaseServices",
-    # WinRT остаётся для restricted migration старых CNG Hello vaults.
-    # Новый Enhanced flow использует native WebAuthn platform credential.
+    # WinRT: UserConsentVerifier — только проверка, настроен ли Windows Hello.
+    # Сама проверка Hello — WebAuthn-assertion платформенного credential.
     "Foundation",
     "Security_Credentials",
     "Security_Credentials_UI",
-    "Security_Cryptography_Core",
-    "Storage_Streams",
     # CNG для проверки наличия TPM-провайдера.
     "Win32_Security_Cryptography_Catalog",
-    # Interop: IUserConsentVerifierInterop для HWND-привязки Hello prompt.
-    "Win32_System_WinRT",
 ] }
 windows-core = "0.62"
 windows-future = "0.3"

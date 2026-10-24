@@ -16,8 +16,8 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
 
 ### 🔐 Вход и защита
 
-- **PIN Vaultisor — всегда.** От 11 цифр (или буквенно-цифровой от 11
-  символов). Мастер-ключ обёрнут Argon2id (512 МиБ, t=6, p=2) от PIN и
+- **PIN Vaultisor.** От 11 цифр (или буквенно-цифровой от 11 символов).
+  Мастер-ключ обёрнут Argon2id (512 МиБ, t=6, p=4) от PIN и
   Device Secret из TPM. Хэша PIN нет: PIN проверяется только разворотом
   мастер-ключа, поэтому украденный файл не даёт офлайн-перебора.
 - **Windows Hello — второй фактор поверх PIN** (политика И). После PIN
@@ -27,6 +27,9 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
   - режим **ПИН + Touch** — токен требует свой ПИН (два фактора);
   - режим **Touch-only** — одно касание (один фактор владения, выбирается
     осознанно);
+  - FIDO2 — **самостоятельный путь входа**, а не второй фактор: он открывает
+    хранилище без PIN Vaultisor и без Windows Hello. Части восстановления
+    после такого входа выдаются только по PIN;
   - ключ **привязан к устройству**: мастер-ключ открывается только вместе с
     Device Secret из TPM этого компьютера и DPAPI этой учётной записи —
     скопированное хранилище с тем же токеном на другом ПК не откроется;
@@ -46,8 +49,9 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
   отдельными страницами — обнаруживаются при входе.
 - **Буфер обмена.** Секрет не попадает в историю буфера и облачный буфер
   Windows, очищается по таймеру (до 2 минут) и при блокировке.
-- **Автоблокировка** по простою (до часа), при блокировке сеанса Windows,
-  сне и смене пользователя.
+- **Автоблокировка** по простою (до часа), при блокировке сеанса Windows
+  (Win+L, смена пользователя). При выходе из сна хранилище блокируется вместе
+  с сеансом, если Windows требует входа после сна.
 
 ### 🗄️ Хранение данных
 
@@ -158,8 +162,8 @@ TPM 2.0 (without a TPM, a master password of 15+ characters is used).
 
 ### 🔐 Sign-in and protection
 
-- **The Vaultisor PIN is always required.** 11+ digits (or 11+ alphanumeric
-  characters). The master key is wrapped with Argon2id (512 MiB, t=6, p=2)
+- **The Vaultisor PIN.** 11+ digits (or 11+ alphanumeric characters). The
+  master key is wrapped with Argon2id (512 MiB, t=6, p=4)
   from the PIN and a Device Secret held by the TPM. No PIN hash exists: the
   PIN is checked only by unwrapping the master key, so a stolen file gives
   no offline guessing.
@@ -170,6 +174,9 @@ TPM 2.0 (without a TPM, a master password of 15+ characters is used).
   - **PIN + Touch** mode — the token requires its own PIN (two factors);
   - **Touch-only** mode — a single touch (one possession factor, chosen
     deliberately);
+  - FIDO2 is an **independent way to sign in**, not a second factor: it opens
+    the vault without the Vaultisor PIN and without Windows Hello. After such a
+    sign-in, recovery parts are issued only with the PIN;
   - keys are **bound to the device**: the master key opens only together with
     this computer's TPM Device Secret and this account's DPAPI — a copied
     vault with the same token does not open on another PC;
@@ -189,8 +196,9 @@ TPM 2.0 (without a TPM, a master password of 15+ characters is used).
   copies — whole files or individual pages — are detected at sign-in.
 - **Clipboard.** Secrets stay out of Windows clipboard history and cloud
   clipboard, and are cleared on a timer (up to 2 minutes) and on lock.
-- **Auto-lock** on inactivity (up to an hour), Windows session lock, sleep
-  and user switch.
+- **Auto-lock** on inactivity (up to an hour) and on Windows session lock
+  (Win+L, user switch). Waking from sleep locks the vault together with the
+  session when Windows requires sign-in after sleep.
 
 ### 🗄️ Data
 

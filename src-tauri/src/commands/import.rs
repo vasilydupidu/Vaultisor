@@ -213,6 +213,10 @@ pub async fn import_chromium_csv(
     capability: String,
     state: State<'_, AppState>,
 ) -> Result<ImportResult> {
+    import_csv(&state, &capability)
+}
+
+pub(crate) fn import_csv(state: &AppState, capability: &str) -> Result<ImportResult> {
     if state.check_autolock() || !state.session.lock().is_unlocked() {
         return Err(VaultError::Locked);
     }
@@ -221,7 +225,7 @@ pub async fn import_chromium_csv(
         let stamp =
             crate::commands::file_grants::session_stamp(&session).ok_or(VaultError::Locked)?;
         let path = state.file_grants.lock().consume(
-            &capability,
+            capability,
             crate::commands::file_grants::FileOperation::CsvImport,
             Some(stamp),
         )?;
@@ -427,13 +431,17 @@ pub(crate) fn import_entries(
 /// Безопасное шредирование (затирание и удаление) файла с диска.
 #[tauri::command]
 pub async fn secure_delete_file(deletion_token: String, state: State<'_, AppState>) -> Result<()> {
+    delete_imported_csv(&state, &deletion_token)
+}
+
+pub(crate) fn delete_imported_csv(state: &AppState, deletion_token: &str) -> Result<()> {
     if state.check_autolock() || !state.session.lock().is_unlocked() {
         return Err(VaultError::Locked);
     }
     let pending = state
         .pending_import_deletions
         .lock()
-        .remove(&deletion_token)
+        .remove(deletion_token)
         .ok_or_else(|| {
             VaultError::BadInput(
                 "Недействительное или уже использованное разрешение на удаление".into(),
@@ -476,6 +484,7 @@ pub fn secure_delete_authorized_file(pending: crate::state::PendingImportDeletio
     let len = pending.length;
 
     if len > 0 {
+        crate::failpoint::hit("fs.write")?;
         file.seek(SeekFrom::Start(0))?;
         let overwrite = core_shared::rng::random_vec(len.min(1024 * 1024) as usize);
         let mut written = 0;
@@ -489,6 +498,7 @@ pub fn secure_delete_authorized_file(pending: crate::state::PendingImportDeletio
     }
 
     drop(file);
+    crate::failpoint::hit("fs.remove")?;
     std::fs::remove_file(&path)?;
     Ok(())
 }

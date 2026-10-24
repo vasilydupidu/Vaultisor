@@ -17,9 +17,12 @@
 //! хранилище остаётся (NEW_VALID + cleanup pending).
 //!
 //! Если метаданные не опубликованы, создание откатывается: удаляются файлы
-//! сборки и — только при наличии маркера COMMITTING — те живые файлы, которые
-//! уже были перенесены из сборки. Файл, чья копия ещё лежит в сборке, не
-//! перенесён, а значит живой файл с тем же именем чужой и не трогается.
+//! сборки и — только при наличии маркера COMMITTING и только пока живых
+//! метаданных нет — те живые файлы, которые уже были перенесены из сборки.
+//! Файл, чья копия ещё лежит в сборке, не перенесён, а значит живой файл с тем
+//! же именем чужой и не трогается. Живые метаданные означают существующее
+//! хранилище: создание и импорт начинаются только без них, поэтому рядом с
+//! ними маркер может быть лишь подложенным, и ни один живой файл не удаляется.
 //!
 //! Создание начинается, только если живых файлов хранилища нет. Существующее
 //! хранилище этот модуль не удаляет ни при каких условиях.
@@ -101,17 +104,16 @@ pub(crate) fn recover(root: &Path) -> Result<()> {
             return remove_dir(&dir);
         }
     }
-    if let Some(op_id) = marker {
-        for name in FILES {
-            if dir.join(name).exists() {
-                continue; // не перенесён — живой файл с этим именем не наш
+    if marker.is_some() {
+        if root.join(META).exists() {
+            log::warn!("create staging: a live vault exists, its files are left intact");
+        } else {
+            for name in FILES {
+                if dir.join(name).exists() {
+                    continue; // не перенесён — живой файл с этим именем не наш
+                }
+                crate::storage::fsio::remove_file_if_exists(&root.join(name))?;
             }
-            let live = root.join(name);
-            if name == META && !meta_belongs_to(&live, &op_id) {
-                log::warn!("create staging: live metadata is not ours, left intact");
-                continue;
-            }
-            crate::storage::fsio::remove_file_if_exists(&live)?;
         }
     }
     remove_dir(&dir)

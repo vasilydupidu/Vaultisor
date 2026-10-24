@@ -106,7 +106,6 @@ pub fn run() {
             builder.build()
         })
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             // Версия в первой строке лога. Без неё невозможно понять, какую
             // сборку прислали: одинаковый симптом на двух версиях уводит

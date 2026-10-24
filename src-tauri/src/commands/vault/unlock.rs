@@ -198,20 +198,32 @@ pub(crate) async fn unlock_with_pin_policy(
     }
 
     open_session_with(state, master, integrity_key, rollback)?;
-    after_unlock(state, &meta);
+    after_unlock(state, &meta, Proof::Pin);
     log::info!("vault_unlock: success");
     Ok(())
 }
 
+/// Чем вход доказал владение хранилищем.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Proof {
+    /// PIN Vaultisor (и Hello, если он включён).
+    Pin,
+    /// FIDO2-ключ — самостоятельный путь входа без PIN.
+    Fido,
+}
+
 /// Общее для всех путей входа после открытия сессии.
 ///
-/// Незавершённое восстановление (`pending`: доли выданы, но не подтверждены,
-/// израсходованы или не пришли с импортом) ведёт к выдаче нового комплекта.
-/// Вход только что доказал PIN (и Hello), поэтому разрешение на новое
-/// поколение выдаётся без повторного ввода.
-pub(crate) fn after_unlock(state: &AppState, meta: &VaultMetaRow) {
+/// Незавершённое восстановление (`pending`: части выданы, но не подтверждены,
+/// израсходованы или хранилище импортировано) ведёт к выдаче нового
+/// комплекта. Части B и C — переносимый доступ к хранилищу, поэтому без
+/// повторного ввода их выдаёт только вход, доказавший PIN. После входа по
+/// FIDO2 интерфейс спросит PIN при выдаче: иначе ключ «только касание» на
+/// этом ПК давал бы части, открывающие хранилище где угодно.
+pub(crate) fn after_unlock(state: &AppState, meta: &VaultMetaRow, proof: Proof) {
     apply_settings(state, meta);
-    if meta.recovery_state == crate::storage::meta_db::RecoveryState::Pending {
+    if proof == Proof::Pin && meta.recovery_state == crate::storage::meta_db::RecoveryState::Pending
+    {
         crate::commands::security::grant_after_proof(
             state,
             crate::commands::security::SecurityAction::RegenerateRecovery,

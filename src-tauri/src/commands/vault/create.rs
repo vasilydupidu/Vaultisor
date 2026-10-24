@@ -37,8 +37,8 @@ pub struct VaultCreateInput {
     pub clipboard_clear_seconds: Option<u32>,
 }
 
-/// Доли Шамира, которые пользователь обязан сохранить сам.
-/// Доля A остаётся на устройстве под DPAPI и наружу не выдаётся.
+/// Части восстановления B и C: пользователь сохраняет обе, раздельно. На
+/// устройстве части нет.
 #[derive(Debug, serde::Serialize)]
 pub struct VaultCreateOutput {
     /// Поколение восстановления: его подтверждает `recovery_acknowledge`,

@@ -244,6 +244,16 @@ pub(crate) fn open_session_with(
         web_revision,
         revision_sink(state, &integrity_key, Database::Web),
     );
+    // Выключенная история не хранится. Выключение стирает её отдельными
+    // commit'ами после флага; недочищенное после сбоя дочищается здесь.
+    // Неудача не мешает входу: включение истории само начинается с очистки.
+    if !row.enable_password_history {
+        for db in [&records_db, &web_db] {
+            if let Err(error) = crate::storage::records::clear_all_password_history(db) {
+                log::warn!("open_session: password history cleanup deferred: {error}");
+            }
+        }
+    }
 
     let mut session = state.session.lock();
     *session = crate::state::SessionState::Unlocked {

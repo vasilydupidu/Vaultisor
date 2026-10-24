@@ -75,12 +75,15 @@ pub fn aaguid_model_name(aaguid: &[u8; 16]) -> &'static str {
 /// Одинаковая соль при каждом assertion → детерминированный PRF-output → KEK.
 pub(crate) const PRF_SALT: &[u8; 32] = b"vaultisor:fido2-prf-salt:v1\x00\x00\x00\x00\x00";
 
+/// Минимальная версия WebAuthn API: с неё Windows передаёт расширение
+/// hmac-secret (PRF), без которого ключ хранилища нечем обернуть.
+const MIN_API_VERSION: u32 = 6;
+
+/// FIDO2 доступен, только если Windows умеет PRF: на старом API привязка
+/// прошла бы диалоги и всё равно закончилась бы отказом.
 #[cfg(target_os = "windows")]
 pub fn is_fido2_supported() -> bool {
-    unsafe {
-        let version = crate::windows_api::webauthn_ffi::WebAuthNGetApiVersionNumber();
-        version >= 1
-    }
+    unsafe { crate::windows_api::webauthn_ffi::WebAuthNGetApiVersionNumber() >= MIN_API_VERSION }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -112,6 +115,12 @@ pub fn register_fido2_key_prompt(
 
     unsafe {
         let api_version = WebAuthNGetApiVersionNumber();
+        if api_version < MIN_API_VERSION {
+            return Err(VaultError::FidoFailed(
+                "Windows не передаёт hmac-secret: FIDO2 требует WebAuthn API 6+ (Windows 11)"
+                    .into(),
+            ));
+        }
 
         let rp_id: Vec<u16> = "vaultisor.app\0".encode_utf16().collect();
         let rp_name: Vec<u16> = "Vaultisor\0".encode_utf16().collect();
@@ -182,7 +191,7 @@ pub fn register_fido2_key_prompt(
         let mut p_attestation: *mut WEBAUTHN_CREDENTIAL_ATTESTATION_V5 = ptr::null_mut();
 
         // V6 options с bEnablePrf = TRUE
-        let hr = if api_version >= 6 {
+        let hr = {
             let options_v6 = WEBAUTHN_AUTHENTICATOR_MAKE_CREDENTIAL_OPTIONS_V6 {
                 dwVersion: 6,
                 dwTimeoutMilliseconds: 60_000,
@@ -221,38 +230,6 @@ pub fn register_fido2_key_prompt(
                 &options_v6 as *const _ as *const WEBAUTHN_AUTHENTICATOR_MAKE_CREDENTIAL_OPTIONS_V1,
                 &mut p_attestation as *mut *mut _ as *mut *mut WEBAUTHN_CREDENTIAL_ATTESTATION_V1,
             )
-        } else {
-            let options = WEBAUTHN_AUTHENTICATOR_MAKE_CREDENTIAL_OPTIONS_V1 {
-                dwVersion: 1,
-                dwTimeoutMilliseconds: 60_000,
-                CredentialList: WEBAUTHN_CREDENTIALS {
-                    cCredentials: 0,
-                    pCredentials: ptr::null(),
-                },
-                Extensions: WEBAUTHN_EXTENSIONS {
-                    cExtensions: 0,
-                    pExtensions: ptr::null(),
-                },
-                dwAuthenticatorAttachment: attachment,
-                bRequireResidentKey: if require_pin { 1 } else { 0 },
-                dwUserVerificationRequirement: if require_pin {
-                    WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED
-                } else {
-                    WEBAUTHN_USER_VERIFICATION_REQUIREMENT_DISCOURAGED
-                },
-                dwAttestationConveyancePreference: 0,
-                dwFlags: 0,
-            };
-
-            WebAuthNAuthenticatorMakeCredential(
-                hwnd,
-                &rp_info,
-                &user_info,
-                &param_list,
-                &client_data,
-                &options,
-                &mut p_attestation as *mut *mut _ as *mut *mut WEBAUTHN_CREDENTIAL_ATTESTATION_V1,
-            )
         };
 
         if hr != 0 || p_attestation.is_null() {
@@ -289,7 +266,10 @@ pub fn register_fido2_key_prompt(
         let mut prf_supported = false;
 
         if !p_attestation.is_null() {
-            let att = &*p_attestation;
+            // ОС может вернуть структуру ранней версии: общие поля читаются
+            // через V1 (её префикс есть у любой версии), поля новых версий —
+            // только после проверки `dwVersion`.
+            let att = &*(p_attestation as *const WEBAUTHN_CREDENTIAL_ATTESTATION_V1);
 
             if att.cbCredentialId > 0 && !att.pbCredentialId.is_null() {
                 credential_id =
@@ -327,10 +307,11 @@ pub fn register_fido2_key_prompt(
 
             // `bPrfEnabled` из ответа V5
             if att.dwVersion >= 5 {
-                prf_supported = att.bPrfEnabled != 0;
+                let prf_enabled = (*p_attestation).bPrfEnabled;
+                prf_supported = prf_enabled != 0;
                 log::info!(
                     "register: bPrfEnabled={} (dwVersion={})",
-                    att.bPrfEnabled,
+                    prf_enabled,
                     att.dwVersion
                 );
             }
@@ -387,6 +368,12 @@ pub fn assert_fido2_key_prompt(
 
     unsafe {
         let api_version = WebAuthNGetApiVersionNumber();
+        if api_version < MIN_API_VERSION {
+            return Err(VaultError::FidoFailed(
+                "Windows не передаёт hmac-secret: FIDO2 требует WebAuthn API 6+ (Windows 11)"
+                    .into(),
+            ));
+        }
         log::info!(
             "assert_fido2_key_prompt: api_version={}, require_pin={}, cred_count={}",
             api_version,
@@ -436,7 +423,7 @@ pub fn assert_fido2_key_prompt(
         let mut p_assertion: *mut WEBAUTHN_ASSERTION_V3 = ptr::null_mut();
 
         // V6 options с PRF salt
-        let hr = if api_version >= 6 && !registered_credentials.is_empty() {
+        let hr = {
             let mut prf_salt_buf = *PRF_SALT;
             let mut hmac_salt = WEBAUTHN_HMAC_SECRET_SALT {
                 cbFirst: 32,
@@ -507,94 +494,6 @@ pub fn assert_fido2_key_prompt(
                 &options_v6 as *const _ as *const WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS_V1,
                 &mut p_assertion as *mut *mut _ as *mut *mut WEBAUTHN_ASSERTION_V1,
             )
-        } else if api_version >= 4 && !registered_credentials.is_empty() {
-            // V4 fallback (без PRF, с transport restriction)
-            let allow_creds_ex: Vec<WEBAUTHN_CREDENTIAL_EX> = registered_credentials
-                .iter()
-                .map(|cid| WEBAUTHN_CREDENTIAL_EX {
-                    dwVersion: 1,
-                    cbId: cid.len() as u32,
-                    pbId: cid.as_ptr(),
-                    pwszCredentialType: cred_type_str.as_ptr(),
-                    dwTransports: WEBAUTHN_CTAP_TRANSPORT_USB | WEBAUTHN_CTAP_TRANSPORT_NFC,
-                })
-                .collect();
-            let allow_ptrs: Vec<*const WEBAUTHN_CREDENTIAL_EX> =
-                allow_creds_ex.iter().map(|c| c as *const _).collect();
-            let allow_list = WEBAUTHN_CREDENTIAL_LIST {
-                cCredentials: allow_ptrs.len() as u32,
-                ppCredentials: allow_ptrs.as_ptr(),
-            };
-
-            let options_v4 = WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS_V4 {
-                dwVersion: 4,
-                dwTimeoutMilliseconds: 60_000,
-                CredentialList: WEBAUTHN_CREDENTIALS {
-                    cCredentials: 0,
-                    pCredentials: ptr::null(),
-                },
-                Extensions: WEBAUTHN_EXTENSIONS {
-                    cExtensions: 0,
-                    pExtensions: ptr::null(),
-                },
-                dwAuthenticatorAttachment: attachment,
-                dwUserVerificationRequirement: uv_requirement,
-                dwFlags: 0,
-                pwszU2fAppId: ptr::null(),
-                pbU2fAppId: ptr::null_mut(),
-                pCancellationId: ptr::null(),
-                pAllowCredentialList: &allow_list,
-            };
-
-            WebAuthNAuthenticatorGetAssertion(
-                hwnd,
-                rp_id.as_ptr(),
-                &client_data,
-                &options_v4 as *const _ as *const WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS_V1,
-                &mut p_assertion as *mut *mut _ as *mut *mut WEBAUTHN_ASSERTION_V1,
-            )
-        } else {
-            // V1 fallback
-            let allow_creds: Vec<WEBAUTHN_CREDENTIAL> = registered_credentials
-                .iter()
-                .map(|cid| WEBAUTHN_CREDENTIAL {
-                    dwVersion: 1,
-                    cbId: cid.len() as u32,
-                    pbId: cid.as_ptr(),
-                    pwszCredentialType: cred_type_str.as_ptr(),
-                })
-                .collect();
-
-            let options = WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS_V1 {
-                dwVersion: 1,
-                dwTimeoutMilliseconds: 60_000,
-                CredentialList: if !allow_creds.is_empty() {
-                    WEBAUTHN_CREDENTIALS {
-                        cCredentials: allow_creds.len() as u32,
-                        pCredentials: allow_creds.as_ptr(),
-                    }
-                } else {
-                    WEBAUTHN_CREDENTIALS {
-                        cCredentials: 0,
-                        pCredentials: ptr::null(),
-                    }
-                },
-                Extensions: WEBAUTHN_EXTENSIONS {
-                    cExtensions: 0,
-                    pExtensions: ptr::null(),
-                },
-                dwAuthenticatorAttachment: attachment,
-                dwUserVerificationRequirement: uv_requirement,
-                dwFlags: 0,
-            };
-
-            WebAuthNAuthenticatorGetAssertion(
-                hwnd,
-                rp_id.as_ptr(),
-                &client_data,
-                &options,
-                &mut p_assertion as *mut *mut _ as *mut *mut WEBAUTHN_ASSERTION_V1,
-            )
         };
 
         if hr != 0 || p_assertion.is_null() {
@@ -626,7 +525,9 @@ pub fn assert_fido2_key_prompt(
         let mut signature = Vec::new();
 
         if !p_assertion.is_null() {
-            let ass = &*p_assertion;
+            // Как и при регистрации: общие поля — через V1, `pHmacSecret` —
+            // только при `dwVersion >= 3`.
+            let ass = &*(p_assertion as *const WEBAUTHN_ASSERTION_V1);
             if ass.cbAuthenticatorData > 32 && !ass.pbAuthenticatorData.is_null() {
                 authenticator_data = std::slice::from_raw_parts(
                     ass.pbAuthenticatorData,
@@ -657,8 +558,13 @@ pub fn assert_fido2_key_prompt(
             }
 
             // PRF-output из V3+ assertion
-            if ass.dwVersion >= 3 && !ass.pHmacSecret.is_null() {
-                let hmac_secret = &*ass.pHmacSecret;
+            let p_hmac_secret = if ass.dwVersion >= 3 {
+                (*p_assertion).pHmacSecret
+            } else {
+                ptr::null()
+            };
+            if !p_hmac_secret.is_null() {
+                let hmac_secret = &*p_hmac_secret;
                 if hmac_secret.cbFirst >= 32 && !hmac_secret.pbFirst.is_null() {
                     let prf_bytes = std::slice::from_raw_parts(
                         hmac_secret.pbFirst,

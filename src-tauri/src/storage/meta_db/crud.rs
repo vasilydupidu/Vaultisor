@@ -1752,4 +1752,46 @@ mod tests {
             Err(VaultError::MetaTampered)
         ));
     }
+
+    /// Подложенный в файл триггер не дожидается первой защищённой записи:
+    /// метаданные с чужим объектом схемы не открываются вовсе, а значения,
+    /// которые он менял бы, остаются нетронутыми.
+    #[test]
+    fn planted_schema_objects_are_rejected_on_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = [0x6Bu8; 32];
+        let path = dir.path().join("vault.meta.db");
+        drop(sealed_vault(dir.path(), &key));
+        for planted in [
+            "CREATE TRIGGER t AFTER UPDATE ON vault_meta BEGIN \
+             UPDATE vault_meta SET use_windows_hello = 0, failed_pin_attempts = 0; END",
+            "CREATE VIEW v AS SELECT * FROM vault_meta",
+            "CREATE INDEX i ON fido2_keys(name)",
+            "CREATE TABLE extra (x INTEGER)",
+        ] {
+            let attacker = Connection::open(&path).unwrap();
+            attacker.execute_batch(planted).unwrap();
+            drop(attacker);
+            assert!(
+                matches!(MetaDb::open(&path), Err(VaultError::MetaTampered)),
+                "{planted}"
+            );
+            let attacker = Connection::open(&path).unwrap();
+            let (kind, name): (String, String) = attacker
+                .query_row(
+                    "SELECT type, name FROM sqlite_master WHERE name IN ('t', 'v', 'i', 'extra')",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            attacker
+                .execute_batch(&format!("DROP {} {name}", kind.to_uppercase()))
+                .unwrap();
+        }
+        // Чистая схема снова открывается, и MAC сходится.
+        MetaDb::open(&path)
+            .unwrap()
+            .verify_meta_integrity(&key)
+            .unwrap();
+    }
 }

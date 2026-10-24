@@ -122,6 +122,7 @@ dependencies = [
  "cpufeatures 0.3.1",
  "password-hash",
  "rayon",
+ "zeroize",
 ]
 
 [[package]]
@@ -725,17 +726,12 @@ version = "2.0.0"
 dependencies = [
  "aes-gcm",
  "argon2",
- "base64 0.22.1",
  "hex",
  "hkdf",
- "hmac",
  "once_cell",
  "rand 0.8.6",
- "rand_chacha 0.3.1",
  "serde",
- "serde_json",
  "sha2",
- "subtle",
  "windows 0.62.2",
  "zeroize",
 ]
@@ -4941,7 +4937,6 @@ name = "vaultisor"
 version = "5.2.0"
 dependencies = [
  "aes-gcm",
- "anyhow",
  "base64 0.22.1",
  "chrono",
  "core-shared",
@@ -4953,7 +4948,6 @@ dependencies = [
  "parking_lot",
  "proptest",
  "rand 0.8.6",
- "rand_chacha 0.3.1",
  "rusqlite",
  "serde",
  "serde_json",
@@ -4962,7 +4956,6 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
- "tauri-plugin-fs",
  "tauri-plugin-log",
  "tauri-plugin-single-instance",
  "tempfile",

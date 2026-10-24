@@ -243,18 +243,26 @@ fn write_protected_text(hwnd: HWND, secret: &str) -> Result<u32> {
     unsafe {
         EmptyClipboard().map_err(|e| VaultError::System(format!("EmptyClipboard: {e}")))?;
 
-        let text = alloc_global(&bytes)?;
-        if let Err(error) = SetClipboardData(CF_UNICODETEXT, Some(text)) {
-            let _ = GlobalFree(Some(HGLOBAL(text.0)));
-            return Err(VaultError::System(format!(
-                "SetClipboardData(CF_UNICODETEXT): {error}"
-            )));
+        // Маркеры исключения обязаны попасть в ту же сессию, что и текст, и
+        // ставятся первыми. Любой сбой очищает буфер до его закрытия: секрет
+        // без маркеров попал бы в историю буфера и облачную синхронизацию.
+        let written = (|| {
+            put_format("ExcludeClipboardContentFromMonitorProcessing", &[0u8])?;
+            put_format("CanIncludeInClipboardHistory", &0u32.to_le_bytes())?;
+            put_format("CanUploadToCloudClipboard", &0u32.to_le_bytes())?;
+            let text = alloc_global(&bytes)?;
+            if let Err(error) = SetClipboardData(CF_UNICODETEXT, Some(text)) {
+                let _ = GlobalFree(Some(HGLOBAL(text.0)));
+                return Err(VaultError::System(format!(
+                    "SetClipboardData(CF_UNICODETEXT): {error}"
+                )));
+            }
+            Ok(())
+        })();
+        if let Err(error) = written {
+            let _ = EmptyClipboard();
+            return Err(error);
         }
-
-        // Маркеры исключения обязаны попасть в ту же сессию, что и текст.
-        put_format("ExcludeClipboardContentFromMonitorProcessing", &[0u8])?;
-        put_format("CanIncludeInClipboardHistory", &0u32.to_le_bytes())?;
-        put_format("CanUploadToCloudClipboard", &0u32.to_le_bytes())?;
     }
     drop(session);
 

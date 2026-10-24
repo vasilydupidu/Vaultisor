@@ -177,7 +177,7 @@ fn validate_user_path(p: &str) -> Result<&std::path::Path> {
 
 #[derive(Debug, Deserialize)]
 pub struct RestoreInput {
-    /// Любые две из трёх долей в hex-формате "X|hex".
+    /// Обе части, B и C, в формате "X|hex".
     pub shares_hex: Vec<String>,
     pub new_pin: String,
 }

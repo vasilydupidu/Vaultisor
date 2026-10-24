@@ -197,7 +197,7 @@ export const apiVaultLock = () => invoke<void>("vault_lock");
 export const apiVaultChangePin = (newPin: string, requestId: string) =>
   invoke<void>("vault_change_pin", { input: { new_pin: newPin, request_id: requestId } });
 
-/** PIN обязателен всегда; Hello и FIDO2 — дополнительные факторы поверх него. */
+/** Hello — второй фактор поверх PIN; FIDO2 — самостоятельный путь входа без PIN. */
 export interface LockInfo {
   use_windows_hello: boolean;
   fido2_enabled: boolean;

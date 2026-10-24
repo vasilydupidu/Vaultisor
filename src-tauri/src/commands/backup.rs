@@ -127,18 +127,9 @@ fn write_config_at(data_dir: &Path, key: &[u8; 32], cfg: &BackupConfig) -> Resul
     };
     let json = serde_json::to_string_pretty(&envelope)
         .map_err(|e| VaultError::System(format!("backup config serialize: {e}")))?;
-    let path = config_path(data_dir);
-    let mut temporary = tempfile::NamedTempFile::new_in(
-        path.parent()
-            .ok_or_else(|| VaultError::Storage("backup config has no parent".into()))?,
-    )?;
-    use std::io::Write;
-    temporary.write_all(json.as_bytes())?;
-    temporary.as_file().sync_all()?;
-    let (temporary_file, temporary_path) = temporary.keep().map_err(|error| error.error)?;
-    drop(temporary_file);
-    crate::storage::restore::durable_replace(&temporary_path, &path)?;
-    Ok(())
+    // Временный файл с префиксом атомарной записи: след оборванной замены
+    // убирается при старте, а не остаётся в каталоге хранилища навсегда.
+    crate::storage::fsio::write_atomic(&config_path(data_dir), json.as_bytes())
 }
 
 /// Session-bound material captured once, so no config I/O runs while the
@@ -298,7 +289,8 @@ pub(crate) fn backup_now_blocking(state: &AppState, request_id: &str) -> Result<
 }
 
 /// Собрать VLT2-бандл из трёх зашифрованных БД (meta + records + web).
-/// `meta.db` санитизируется перед включением — pin_hash обнуляется.
+/// `meta.db` санитизируется перед включением: обёртки FIDO2 и credential
+/// Windows Hello из копии убираются (`sanitize_meta_for_export_with_key`).
 pub(crate) fn build_bundle(state: &AppState) -> Result<Vec<u8>> {
     let (meta, records, web) = snapshot_bundle_parts(state)?;
     let mut out = Vec::with_capacity(16 + meta.len() + records.len() + web.len());

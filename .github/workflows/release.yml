@@ -84,8 +84,10 @@ jobs:
           echo "C:/Strawberry/perl/bin" >> "$GITHUB_PATH"
           echo "C:/Strawberry/c/bin" >> "$GITHUB_PATH"
 
+      # Без install-скриптов: код зависимостей не исполняется в job'е, который
+      # собирает публикуемый бинарник. Сборке они не нужны.
       - name: Install dependencies
-        run: npm ci --no-fund
+        run: npm ci --no-fund --ignore-scripts
 
       - name: Build portable executable
         run: powershell -ExecutionPolicy Bypass -File .\build.ps1 -SkipDeps

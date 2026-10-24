@@ -7,13 +7,13 @@
 //
 // Это означает: кто имеет master_key, тот имеет доступ к records.db.
 // Master_key получается одним из путей:
-//   - cascade unlock через PIN (DPAPI + Argon2id);
-//   - cascade unlock через Hello+TPM;
-//   - Shamir-восстановление (обе части, B и C).
+//   - PIN (Argon2id + Device Secret из TPM, затем DPAPI);
+//   - FIDO2-ключ (hmac-secret + Device Secret);
+//   - восстановление по частям B и C.
 //
-// На чужой машине: cascade fail (DPAPI) → frontend открывает Recovery →
-// Shamir B+C → master_key → derive sqlcipher_key → open records.db. Записи
-// читаются без потерь.
+// На чужой машине Device Secret и DPAPI не разворачиваются → остаётся
+// восстановление по частям B и C → master_key → ключ SQLCipher → records.db.
+// Записи читаются без потерь.
 //
 // Защита: даже на той же машине файл records.db без master_key — это AES-CBC
 // шифротекст. Атакующий, имеющий только vault.records.db, не сможет

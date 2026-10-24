@@ -19,7 +19,7 @@
 | Модель угроз (от чего защищаем, от чего нет) | [`SECURITY.md`](../SECURITY.md) |
 | Криптографические решения и домены разделения | [`SECURITY.md`](../SECURITY.md), doc-комментарии в `src-tauri/src/crypto/` |
 | Ограничения продукта (Windows-only, portable, air-gapped) | [`README.md`](../README.md) |
-| Найденные проблемы и их статус | [`docs/VAULTISOR-INDEPENDENT-SECURITY-AUDIT.md`](./VAULTISOR-INDEPENDENT-SECURITY-AUDIT.md) (аудит 5.0.x, исходные находки консолидации 5.2.0) |
+| Найденные проблемы и их статус | [`docs/VAULTISOR-INDEPENDENT-SECURITY-AUDIT.md`](./VAULTISOR-INDEPENDENT-SECURITY-AUDIT.md) (аудит 5.0.x) и [`docs/VAULTISOR-5.2.0-SECURITY-CONSOLIDATION.md`](./VAULTISOR-5.2.0-SECURITY-CONSOLIDATION.md) (статус каждой находки в 5.2.0) |
 | Аппаратная проверка релиза | [`docs/SMOKE-TEST-5.2.0.md`](./SMOKE-TEST-5.2.0.md) |
 
 Правило проектирования, из которого следует почти всё остальное: **любое

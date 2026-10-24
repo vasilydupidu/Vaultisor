@@ -110,16 +110,8 @@ pub struct Fido2KeyRow {
     pub request_id: Option<String>,
 }
 
-pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
-    let current: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if current >= META_SCHEMA_VERSION {
-        return Ok(());
-    }
-
-    conn.execute_batch("BEGIN IMMEDIATE")?;
-    let result: Result<()> = (|| {
-        conn.execute_batch(
-            r#"
+/// Схема метаданных. Из неё же строится эталон для `verify_meta_schema`.
+const META_SCHEMA_SQL: &str = r#"
             CREATE TABLE IF NOT EXISTS vault_meta (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 created_at TEXT NOT NULL,
@@ -178,8 +170,17 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
                 aaguid TEXT,
                 require_pin INTEGER NOT NULL DEFAULT 1
             );
-            "#,
-        )?;
+"#;
+
+pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
+    let current: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if current >= META_SCHEMA_VERSION {
+        return Ok(());
+    }
+
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let result: Result<()> = (|| {
+        conn.execute_batch(META_SCHEMA_SQL)?;
         conn.execute_batch(&format!("PRAGMA user_version = {META_SCHEMA_VERSION}"))?;
         Ok(())
     })();
@@ -198,4 +199,37 @@ pub(crate) fn apply_meta_migrations(conn: &Connection) -> Result<()> {
             Err(error)
         }
     }
+}
+
+/// Объект схемы: тип, имя, таблица и текст `CREATE`.
+type SchemaObject = (String, String, String, Option<String>);
+
+fn schema_objects(conn: &Connection) -> Result<Vec<SchemaObject>> {
+    let mut stmt =
+        conn.prepare("SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name")?;
+    let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Схема метаданных обязана совпадать с эталоном до последнего объекта.
+///
+/// MAC подписывает значения строк, но не схему. Подложенный в файл триггер
+/// (`AFTER UPDATE ON vault_meta …`) менял бы значения внутри собственной
+/// защищённой записи приложения — и приложение само подписало бы результат:
+/// тихо выключило бы Hello и подтверждение копирования, обнулило бы задержки
+/// PIN. Поэтому любой лишний или изменённый объект — триггер, представление,
+/// индекс, другая таблица — считается подменой метаданных.
+pub(crate) fn verify_meta_schema(conn: &Connection) -> Result<()> {
+    static CANONICAL: once_cell::sync::OnceCell<Vec<SchemaObject>> =
+        once_cell::sync::OnceCell::new();
+    let canonical = CANONICAL.get_or_try_init(|| {
+        let reference = Connection::open_in_memory()?;
+        reference.execute_batch(META_SCHEMA_SQL)?;
+        schema_objects(&reference)
+    })?;
+    let version: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version != META_SCHEMA_VERSION || schema_objects(conn)? != *canonical {
+        return Err(crate::error::VaultError::MetaTampered);
+    }
+    Ok(())
 }

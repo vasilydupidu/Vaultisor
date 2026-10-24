@@ -20,6 +20,12 @@
 //! сбой между commit БД и пометкой журнала; она надёжна, потому что
 //! `last_op_id` пишут только журналируемые операции, а каждая из них перед
 //! стартом доводит до конца все незавершённые записи.
+//!
+//! Журнал лежит в профиле пользователя рядом с внешними checkpoint'ами, а не
+//! в каталоге хранилища. Его записи решают, какие TPM-ключи, ключи Hello и
+//! checkpoint'ы удалить при старте; в каталоге хранилища (флешка,
+//! синхронизируемая папка) их мог бы подложить тот, кто умеет лишь писать
+//! файлы, — и удалить ключи устройства за пределами этого каталога.
 
 use std::path::{Path, PathBuf};
 
@@ -27,8 +33,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, VaultError};
 use crate::platform::Os;
-
-const DIR: &str = ".os-journal";
 
 /// Внешний ресурс ОС.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,8 +62,16 @@ pub struct OsJournal {
     entry: Entry,
 }
 
-fn dir(root: &Path) -> PathBuf {
-    root.join(DIR)
+/// Каталог журнала этого хранилища: по хэшу абсолютного пути его каталога.
+/// Путь берётся без обращения к диску и без учёта регистра (как у путей
+/// Windows), поэтому одинаков и до создания каталога, и после.
+fn dir(root: &Path) -> Result<PathBuf> {
+    use sha2::{Digest, Sha256};
+    let absolute = std::path::absolute(root)?;
+    let key = absolute.to_string_lossy().to_lowercase();
+    Ok(crate::storage::machine_checkpoint::base(root)?
+        .join("journal")
+        .join(hex::encode(Sha256::digest(key.as_bytes()))))
 }
 
 impl OsJournal {
@@ -69,7 +81,7 @@ impl OsJournal {
         crate::storage::settle::settle(root, os)?;
         let op_id = uuid::Uuid::new_v4().to_string();
         let journal = Self {
-            path: dir(root).join(format!("{op_id}.json")),
+            path: dir(root)?.join(format!("{op_id}.json")),
             entry: Entry {
                 op_id,
                 ..Entry::default()
@@ -121,7 +133,7 @@ impl OsJournal {
                 return;
             }
         }
-        if let Err(error) = cleanup(&self.path, &self.entry, os, committed) {
+        if let Err(error) = cleanup(root, &self.path, &self.entry, os, committed) {
             log::warn!("os journal: cleanup deferred to next start: {error}");
         }
     }
@@ -139,11 +151,7 @@ impl OsJournal {
 }
 
 /// Удалить лишние ресурсы и саму запись журнала.
-fn cleanup(path: &Path, entry: &Entry, os: &Os, committed: bool) -> Result<()> {
-    let root = path
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| VaultError::Internal("os journal path".into()))?;
+fn cleanup(root: &Path, path: &Path, entry: &Entry, os: &Os, committed: bool) -> Result<()> {
     let doomed = if committed {
         &entry.retire
     } else {
@@ -177,7 +185,7 @@ fn cleanup(path: &Path, entry: &Entry, os: &Os, committed: bool) -> Result<()> {
 /// `last_op_id` — идентификатор последней закоммиченной операции в живых
 /// метаданных (`None`, если хранилища нет).
 pub(crate) fn recover(root: &Path, os: &Os, last_op_id: Option<&str>) -> Result<()> {
-    let directory = dir(root);
+    let directory = dir(root)?;
     if !directory.exists() {
         return Ok(());
     }
@@ -191,7 +199,7 @@ pub(crate) fn recover(root: &Path, os: &Os, last_op_id: Option<&str>) -> Result<
         let entry: Entry =
             serde_json::from_slice(&std::fs::read(&path)?).map_err(|_| VaultError::MetaTampered)?;
         let committed = entry.committed || last_op_id == Some(entry.op_id.as_str());
-        cleanup(&path, &entry, os, committed)?;
+        cleanup(root, &path, &entry, os, committed)?;
     }
     Ok(())
 }
@@ -199,7 +207,8 @@ pub(crate) fn recover(root: &Path, os: &Os, last_op_id: Option<&str>) -> Result<
 /// Незавершённых операций нет.
 #[cfg(test)]
 pub(crate) fn is_empty(root: &Path) -> bool {
-    std::fs::read_dir(dir(root))
+    dir(root)
+        .and_then(|dir| Ok(std::fs::read_dir(dir)?))
         .map(|mut entries| entries.next().is_none())
         .unwrap_or(true)
 }

@@ -99,10 +99,6 @@ fn get_assertion_options_match_the_sdk() {
     assert_eq!(offset_of!(V1, dwAuthenticatorAttachment), 40);
     assert_eq!(offset_of!(V1, dwUserVerificationRequirement), 44);
 
-    type V4 = WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS_V4;
-    assert_eq!(size_of::<V4>(), 88);
-    assert_eq!(offset_of!(V4, pAllowCredentialList), 80);
-
     type V6 = WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS_V6;
     assert_eq!(size_of::<V6>(), 120);
     assert_eq!(offset_of!(V6, dwFlags), 48);

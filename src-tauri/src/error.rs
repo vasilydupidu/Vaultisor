@@ -126,12 +126,6 @@ impl From<aes_gcm::Error> for VaultError {
     }
 }
 
-impl From<anyhow::Error> for VaultError {
-    fn from(e: anyhow::Error) -> Self {
-        VaultError::Internal(e.to_string())
-    }
-}
-
 impl From<core_shared::error::CoreError> for VaultError {
     fn from(e: core_shared::error::CoreError) -> Self {
         match e {

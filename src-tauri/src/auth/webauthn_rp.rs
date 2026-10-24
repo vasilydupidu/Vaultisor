@@ -458,7 +458,7 @@ mod tests {
         }
         // Глубокая вложенность не переполняет стек.
         let mut nested = vec![0xa1, 0x04];
-        nested.extend(std::iter::repeat(0x81).take(64));
+        nested.extend(std::iter::repeat_n(0x81, 64));
         nested.push(0x00);
         assert!(parse_cose_p256(&nested).is_err());
     }

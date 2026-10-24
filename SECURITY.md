@@ -34,7 +34,7 @@ Vaultisor — локальное приложение без сетевой по
 1. **Кража файлов хранилища** (`vault/*.db`, резервные копии `.vault`).
    Записи лежат в SQLCipher 4, значения полей дополнительно зашифрованы
    AES-256-GCM на отдельных HKDF-ключах с привязкой к записи и полю через AAD.
-   Мастер-ключ обёрнут Argon2id (512 МиБ, t=6, p=2) от PIN и Device Secret из
+   Мастер-ключ обёрнут Argon2id (512 МиБ, t=6, p=4) от PIN и Device Secret из
    TPM, поверх — DPAPI. Без TPM и учётной записи этого устройства и без PIN
    файлы бесполезны.
 2. **Офлайн-перебор PIN по украденному файлу.** Хэш PIN не хранится: PIN
@@ -127,7 +127,7 @@ Checkpoint намеренно лежит вне папки хранилища: �
 
 | Назначение | Алгоритм | Параметры |
 |---|---|---|
-| Обёртка мастер-ключа PIN | Argon2id → AES-256-GCM, затем DPAPI | m=512 МиБ, t=6, p=2; ключ из PIN и Device Secret |
+| Обёртка мастер-ключа PIN | Argon2id → AES-256-GCM, затем DPAPI | m=512 МиБ, t=6, p=4; ключ из PIN и Device Secret |
 | Обёртка мастер-ключа FIDO2 | HKDF(PRF ‖ Device Secret) → AES-256-GCM, затем DPAPI | PRF — расширение hmac-secret токена; KEK привязан к credential id |
 | Поля записей | HKDF-SHA256 → AES-256-GCM | соль 16 байт на значение, AAD = запись:поле:тип |
 | Базы записей | SQLCipher 4 | AES-256-CBC + HMAC-SHA512 постранично |
@@ -141,8 +141,8 @@ Checkpoint намеренно лежит вне папки хранилища: �
 ### Дисциплина цепочки поставок
 
 - Все GitHub Actions закреплены по SHA коммита; токены с минимальными
-  правами на каждый job; `persist-credentials: false`; workflows проверяются
-  `actionlint` и `zizmor`.
+  правами на каждый job; `persist-credentials: false`; workflows перед
+  коммитом проверяются локально `actionlint` и `zizmor` (`docs/SDLC.md`).
 - Релиз: сборка без кэшей → неизменяемый артефакт → публикация после сверки
   SHA-256; toolchain Rust зафиксирован, `npm ci`, cargo `--locked`.
 - `cargo deny` (advisories, лицензии, источники), `cargo audit`, `npm audit`
@@ -182,7 +182,7 @@ not defend against, stated plainly.
 1. **Theft of vault files** (`vault/*.db`, `.vault` backups). Records live in
    SQLCipher 4; field values are additionally encrypted with AES-256-GCM under
    per-value HKDF keys bound to the record and field through AAD. The master
-   key is wrapped with Argon2id (512 MiB, t=6, p=2) over the PIN and a
+   key is wrapped with Argon2id (512 MiB, t=6, p=4) over the PIN and a
    TPM-held Device Secret, then with DPAPI.
 2. **Offline PIN guessing from a stolen file.** No PIN hash is stored; the PIN
    can only be checked by unwrapping the master key, which needs the
@@ -274,7 +274,7 @@ share recovery.
 
 | Purpose | Algorithm | Parameters |
 |---|---|---|
-| PIN wrap of the master key | Argon2id → AES-256-GCM, then DPAPI | m=512 MiB, t=6, p=2; key from the PIN and Device Secret |
+| PIN wrap of the master key | Argon2id → AES-256-GCM, then DPAPI | m=512 MiB, t=6, p=4; key from the PIN and Device Secret |
 | FIDO2 wrap of the master key | HKDF(PRF ‖ Device Secret) → AES-256-GCM, then DPAPI | PRF is the token's hmac-secret extension; the KEK is bound to the credential id |
 | Record fields | HKDF-SHA256 → AES-256-GCM | 16-byte salt per value, AAD = record:field:type |
 | Record databases | SQLCipher 4 | AES-256-CBC + HMAC-SHA512 per page |
@@ -288,8 +288,8 @@ share recovery.
 ### Supply chain
 
 - Every GitHub Action is pinned by commit SHA; tokens get least privilege per
-  job; `persist-credentials: false`; workflows are checked with `actionlint`
-  and `zizmor`.
+  job; `persist-credentials: false`; workflows are checked locally with
+  `actionlint` and `zizmor` before every commit (`docs/SDLC.md`).
 - Release: a cache-free build → an immutable artifact → publication after the
   SHA-256 is verified; the Rust toolchain is pinned, `npm ci`, cargo `--locked`.
 - `cargo deny` (advisories, licenses, sources), `cargo audit` and `npm audit`

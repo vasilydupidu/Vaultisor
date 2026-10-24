@@ -194,25 +194,6 @@ pub struct WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS_V1 {
     pub dwFlags: u32,
 }
 
-/// V4 добавляет `pAllowCredentialList` с подсказками транспорта.
-#[repr(C)]
-pub struct WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS_V4 {
-    pub dwVersion: u32,
-    pub dwTimeoutMilliseconds: u32,
-    pub CredentialList: WEBAUTHN_CREDENTIALS,
-    pub Extensions: WEBAUTHN_EXTENSIONS,
-    pub dwAuthenticatorAttachment: u32,
-    pub dwUserVerificationRequirement: u32,
-    pub dwFlags: u32,
-    // V2
-    pub pwszU2fAppId: *const u16,
-    pub pbU2fAppId: *mut i32,
-    // V3
-    pub pCancellationId: *const [u8; 16],
-    // V4
-    pub pAllowCredentialList: *const WEBAUTHN_CREDENTIAL_LIST,
-}
-
 /// V6 добавляет `pHmacSecretSaltValues` — запрос PRF-секрета при входе.
 #[repr(C)]
 pub struct WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS_V6 {

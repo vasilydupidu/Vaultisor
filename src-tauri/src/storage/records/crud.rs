@@ -449,8 +449,7 @@ pub fn update_record(
         let placeholders = if incoming_ids.is_empty() {
             "''".to_string()
         } else {
-            std::iter::repeat("?")
-                .take(incoming_ids.len())
+            std::iter::repeat_n("?", incoming_ids.len())
                 .collect::<Vec<_>>()
                 .join(",")
         };
@@ -744,6 +743,19 @@ pub fn delete_record(db: &RecordsDb, record_id: &str) -> Result<()> {
     db.with_conn(|c| {
         c.execute("DELETE FROM records WHERE id = ?1", params![record_id])?;
         Ok(())
+    })
+}
+
+/// Удалить несколько записей одной транзакцией: выбранное удаляется целиком
+/// или не удаляется вовсе. Идемпотентно, как и `delete_record`.
+pub fn delete_records(db: &RecordsDb, record_ids: &[String]) -> Result<usize> {
+    db.with_conn(|c| {
+        let tx = c.unchecked_transaction()?;
+        for id in record_ids {
+            tx.execute("DELETE FROM records WHERE id = ?1", params![id])?;
+        }
+        commit(tx)?;
+        Ok(record_ids.len())
     })
 }
 

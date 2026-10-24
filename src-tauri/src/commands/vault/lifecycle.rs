@@ -114,7 +114,7 @@ pub(crate) async fn unlock_with_fido2(state: &AppState) -> Result<()> {
         db.set_backoff(&integrity_key, BackoffState::default())?;
     }
     open_session(state, master, integrity_key)?;
-    super::unlock::after_unlock(state, &meta);
+    super::unlock::after_unlock(state, &meta, super::unlock::Proof::Fido);
     log::info!(
         "vault_unlock_with_fido2: unlocked via '{}' (mode={}, uv={})",
         key.name,

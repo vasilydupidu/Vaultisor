@@ -34,7 +34,7 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: npm ci --no-fund
+      - run: npm ci --no-fund --ignore-scripts
       - run: npm run lint
       - run: npm test
       - run: npm run build
@@ -64,12 +64,12 @@ jobs:
         # Кэш общий для веток и потому не используется при релизе: иначе
         # отравленный в другой ветке кэш попал бы в публикуемый бинарник.
         if: ${{ inputs.cache != false }}
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           package-manager-cache: false
-      - run: npm ci --no-fund
+      - run: npm ci --no-fund --ignore-scripts
       - run: npm run build
       - name: Cargo fmt
         run: cargo fmt --all -- --check

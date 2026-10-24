@@ -73,9 +73,11 @@ if ($Clean) {
 # ----- npm ci -----
 # npm ci installs exactly package-lock.json and fails if it disagrees with
 # package.json: the build never silently resolves a different dependency tree.
+# Install scripts are skipped: the build needs none, and dependency code must
+# not run on the machine that produces the release binary.
 if (-not $SkipDeps) {
     Write-Step "Installing npm dependencies (npm ci)"
-    npm ci --no-fund
+    npm ci --no-fund --ignore-scripts
     if ($LASTEXITCODE -ne 0) { throw "npm ci failed (exit $LASTEXITCODE)" }
     Write-Step "Running npm audit"
     npm audit --audit-level=high --no-fund

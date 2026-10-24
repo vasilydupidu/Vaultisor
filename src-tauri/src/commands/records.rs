@@ -78,7 +78,11 @@ pub struct ReorderInput {
 
 #[tauri::command]
 pub fn record_reorder(input: ReorderInput, state: State<'_, AppState>) -> Result<()> {
-    with_unlocked_db(&state, &input.db_type, |_mk, db| {
+    reorder_entries(&state, input)
+}
+
+pub(crate) fn reorder_entries(state: &AppState, input: ReorderInput) -> Result<()> {
+    with_unlocked_db(state, &input.db_type, |_mk, db| {
         reorder_records(db, &input.ordered_ids)
     })
 }
@@ -119,12 +123,16 @@ pub struct UpdateInput {
 
 #[tauri::command]
 pub async fn record_update(input: UpdateInput, state: State<'_, AppState>) -> Result<()> {
+    update_entry(&state, input).await
+}
+
+pub(crate) async fn update_entry(state: &AppState, input: UpdateInput) -> Result<()> {
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
-    crate::commands::auth_gate::require_copy_view_auth(&state).await?;
+    crate::commands::auth_gate::require_copy_view_auth(state).await?;
     let enable_history = state.open_meta()?.get_enable_password_history()?;
-    with_unlocked_db(&state, &input.db_type, |mk, db| {
+    with_unlocked_db(state, &input.db_type, |mk, db| {
         update_record(db, mk, &input.id, &input.data, enable_history)
     })
 }
@@ -137,7 +145,11 @@ pub struct DeleteInput {
 
 #[tauri::command]
 pub fn record_delete(input: DeleteInput, state: State<'_, AppState>) -> Result<()> {
-    with_unlocked_db(&state, &input.db_type, |_mk, db| {
+    delete_entry(&state, input)
+}
+
+pub(crate) fn delete_entry(state: &AppState, input: DeleteInput) -> Result<()> {
+    with_unlocked_db(state, &input.db_type, |_mk, db| {
         delete_record(db, &input.id)
     })
 }
@@ -193,14 +205,14 @@ pub async fn records_batch_delete(
     input: BatchDeleteInput,
     state: State<'_, AppState>,
 ) -> Result<usize> {
-    with_unlocked_db(&state, &input.db_type, |_master, db| {
-        let mut deleted_count = 0;
-        for id in &input.record_ids {
-            if delete_record(db, id).is_ok() {
-                deleted_count += 1;
-            }
-        }
-        Ok(deleted_count)
+    batch_delete_entries(&state, input)
+}
+
+pub(crate) fn batch_delete_entries(state: &AppState, input: BatchDeleteInput) -> Result<usize> {
+    // Одной транзакцией: сбой посередине не оставляет удалённой часть
+    // выбранного при ответе «успешно».
+    with_unlocked_db(state, &input.db_type, |_master, db| {
+        crate::storage::records::delete_records(db, &input.record_ids)
     })
 }
 
@@ -262,12 +274,19 @@ pub async fn record_restore_password_history(
     input: HistoryEntryInput,
     state: State<'_, AppState>,
 ) -> Result<()> {
+    restore_history_entry(&state, input).await
+}
+
+pub(crate) async fn restore_history_entry(
+    state: &AppState,
+    input: HistoryEntryInput,
+) -> Result<()> {
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
-    crate::commands::auth_gate::require_copy_view_auth(&state).await?;
+    crate::commands::auth_gate::require_copy_view_auth(state).await?;
     let enable_history = state.open_meta()?.get_enable_password_history()?;
-    with_unlocked_db(&state, &input.db_type, |mk, db| {
+    with_unlocked_db(state, &input.db_type, |mk, db| {
         crate::storage::records::restore_password_history(
             db,
             mk,
@@ -283,7 +302,11 @@ pub fn record_clear_password_history(
     input: HistoryInput,
     state: State<'_, AppState>,
 ) -> Result<()> {
-    with_unlocked_db(&state, &input.db_type, |_mk, db| {
+    clear_history(&state, input)
+}
+
+pub(crate) fn clear_history(state: &AppState, input: HistoryInput) -> Result<()> {
+    with_unlocked_db(state, &input.db_type, |_mk, db| {
         crate::storage::records::clear_password_history(db, &input.record_id)
     })
 }

@@ -101,8 +101,8 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
       .catch(() => {});
   }, []);
 
-  /** Разблокировка всегда начинается с PIN Vaultisor; Hello и FIDO2 —
-   *  дополнительные факторы, а не альтернатива ему. */
+  /** Вход — PIN Vaultisor (и Hello поверх него, если включён) или
+   *  FIDO2-ключ: это самостоятельный путь, без PIN и Hello. */
   const handleError = (e: unknown) => {
     const raw = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
     if (raw.includes("DEVICE_MISMATCH")) {

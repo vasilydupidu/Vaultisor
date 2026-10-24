@@ -242,6 +242,10 @@ pub async fn get_ui_language(state: State<'_, AppState>) -> Result<String> {
 
 #[tauri::command]
 pub async fn set_ui_language(lang: String, state: State<'_, AppState>) -> Result<()> {
+    update_ui_language(&state, &lang)
+}
+
+pub(crate) fn update_ui_language(state: &AppState, lang: &str) -> Result<()> {
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
@@ -249,7 +253,7 @@ pub async fn set_ui_language(lang: String, state: State<'_, AppState>) -> Result
     match &*session {
         SessionState::Unlocked { integrity_key, .. } => {
             let db = state.open_meta()?;
-            db.set_ui_language(integrity_key, &lang)
+            db.set_ui_language(integrity_key, lang)
         }
         _ => Err(VaultError::Locked),
     }
@@ -266,6 +270,10 @@ pub async fn get_enable_health_check(state: State<'_, AppState>) -> Result<bool>
 
 #[tauri::command]
 pub async fn set_enable_health_check(enabled: bool, state: State<'_, AppState>) -> Result<()> {
+    update_health_check(&state, enabled)
+}
+
+pub(crate) fn update_health_check(state: &AppState, enabled: bool) -> Result<()> {
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
@@ -290,6 +298,10 @@ pub async fn get_enable_generator(state: State<'_, AppState>) -> Result<bool> {
 
 #[tauri::command]
 pub async fn set_enable_generator(enabled: bool, state: State<'_, AppState>) -> Result<()> {
+    update_generator(&state, enabled)
+}
+
+pub(crate) fn update_generator(state: &AppState, enabled: bool) -> Result<()> {
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
@@ -314,6 +326,10 @@ pub async fn get_enable_password_history(state: State<'_, AppState>) -> Result<b
 
 #[tauri::command]
 pub async fn set_enable_password_history(enabled: bool, state: State<'_, AppState>) -> Result<()> {
+    update_password_history(&state, enabled)
+}
+
+pub(crate) fn update_password_history(state: &AppState, enabled: bool) -> Result<()> {
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
@@ -325,9 +341,17 @@ pub async fn set_enable_password_history(enabled: bool, state: State<'_, AppStat
             integrity_key,
             ..
         } => {
+            // Флаг и две базы — три отдельных commit'а. Порядок выбран так,
+            // чтобы сбой между ними не возвращал стёртые значения: включение
+            // начинается с пустой истории, а недочищенное после выключения
+            // дочищает следующий вход (`open_session_with`).
             let db = state.open_meta()?;
-            db.set_enable_password_history(integrity_key, enabled)?;
-            if !enabled {
+            if enabled {
+                crate::storage::records::clear_all_password_history(records_db)?;
+                crate::storage::records::clear_all_password_history(web_db)?;
+                db.set_enable_password_history(integrity_key, true)?;
+            } else {
+                db.set_enable_password_history(integrity_key, false)?;
                 crate::storage::records::clear_all_password_history(records_db)?;
                 crate::storage::records::clear_all_password_history(web_db)?;
             }

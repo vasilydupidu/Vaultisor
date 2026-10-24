@@ -416,6 +416,12 @@ pub async fn sweep_report(name: &str, scenario: Scenario) -> SweepReport {
     if !report.failures.is_empty() {
         return report;
     }
+    // Без шагов свип ничего не проверяет: изменение состояния прошло мимо
+    // точек отказа.
+    assert!(
+        baseline.steps > 0,
+        "{name}: операция не прошла ни одного шага персистентности"
+    );
     for mode in [Mode::Crash, Mode::Error] {
         for step in 1..=baseline.steps {
             let case = scenario(Some((step, mode))).await;

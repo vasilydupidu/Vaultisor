@@ -4,10 +4,16 @@
 use crate::error::{Result, VaultError};
 use std::path::{Path, PathBuf};
 
-pub(crate) fn path(_vault_root: &Path, id: &str) -> Result<PathBuf> {
+pub(crate) fn path(vault_root: &Path, id: &str) -> Result<PathBuf> {
     if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(VaultError::MetaTampered);
     }
+    Ok(base(vault_root)?.join(format!("{id}.checkpoint")))
+}
+
+/// Каталог состояния хранилища в профиле пользователя: внешние checkpoint'ы
+/// и журнал ресурсов ОС. В тестах — внутри каталога тестового хранилища.
+pub(crate) fn base(_vault_root: &Path) -> Result<PathBuf> {
     #[cfg(test)]
     let root = _vault_root.join(".test-machine-checkpoints");
     #[cfg(not(test))]
@@ -23,7 +29,7 @@ pub(crate) fn path(_vault_root: &Path, id: &str) -> Result<PathBuf> {
         #[cfg(not(debug_assertions))]
         production_root()?
     };
-    Ok(root.join(format!("{id}.checkpoint")))
+    Ok(root)
 }
 
 #[cfg(not(test))]

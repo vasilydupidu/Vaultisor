@@ -381,3 +381,75 @@ async fn unknown_fido_token_does_not_unlock() {
         .await
         .is_err());
 }
+
+// ------------------------------------------------------------ этап 5: новые находки
+
+/// Вход по FIDO2 не выдаёт части восстановления без PIN: ключ «только
+/// касание» на этом ПК не должен превращаться в переносимый доступ. После
+/// входа по PIN незавершённое восстановление по-прежнему выдаётся сразу.
+#[tokio::test]
+async fn fido_unlock_does_not_grant_recovery_regeneration() {
+    let env = Env::new();
+    env.create().await; // поколение не подтверждено — восстановление pending
+    env.bind_fido().await;
+    env.state.lock();
+    crate::commands::vault::unlock_with_fido2(&env.state)
+        .await
+        .unwrap();
+    assert!(auth_required(
+        crate::commands::recovery::regenerate_recovery(&env.state)
+    ));
+
+    env.state.lock();
+    env.unlock(PIN).await.unwrap();
+    crate::commands::recovery::regenerate_recovery(&env.state).unwrap();
+}
+
+/// Журнал ресурсов ОС в каталоге хранилища не читается: подложенная туда
+/// запись не удаляет TPM-ключ этого устройства.
+#[tokio::test]
+async fn journal_planted_in_the_vault_folder_deletes_nothing() {
+    let mut env = unlocked().await;
+    let tpm = env
+        .state
+        .open_meta()
+        .unwrap()
+        .vault_load()
+        .unwrap()
+        .unwrap()
+        .device_secret_tpm_name
+        .expect("TPM key");
+    let planted = env.root.join(".os-journal");
+    std::fs::create_dir_all(&planted).unwrap();
+    std::fs::write(
+        planted.join(format!("{}.json", uuid::Uuid::new_v4())),
+        serde_json::json!({
+            "op_id": "planted",
+            "created": [{ "kind": "tpm", "name": tpm }],
+            "retire": [],
+            "committed": false
+        })
+        .to_string(),
+    )
+    .unwrap();
+    env.restart();
+    assert!(env.fake.tpm_keys().contains(&tpm), "TPM-ключ на месте");
+    assert!(env.opens_with_pin(PIN).await);
+    assert_eq!(env.read_canary().as_deref(), Some(CANARY));
+}
+
+/// Подложенный маркер незавершённого создания рядом с живым хранилищем не
+/// удаляет его базы: создание начинается только без живых метаданных.
+#[tokio::test]
+async fn planted_staging_marker_never_deletes_a_live_vault() {
+    let mut env = unlocked().await;
+    let staging = env.root.join(".create-staging");
+    std::fs::create_dir_all(&staging).unwrap();
+    std::fs::write(staging.join("COMMITTING"), b"planted-op").unwrap();
+    env.restart();
+    assert!(env.root.join("vault.records.db").exists());
+    assert!(env.root.join("vault.web.db").exists());
+    assert!(!staging.exists(), "каталог сборки убран");
+    assert!(env.opens_with_pin(PIN).await);
+    assert_eq!(env.read_canary().as_deref(), Some(CANARY));
+}

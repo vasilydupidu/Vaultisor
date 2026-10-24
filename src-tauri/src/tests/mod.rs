@@ -1,6 +1,7 @@
 //! Сценарные тесты: команды целиком поверх тестовой ОС.
 
 mod atomicity;
+mod coverage;
 mod data_flow;
 mod harness;
 mod idempotency;
