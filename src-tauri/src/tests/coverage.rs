@@ -404,6 +404,18 @@ fn password_history_off_case(plan: Option<(usize, Mode)>) -> CaseFuture {
     })
 }
 
+/// Повторное включение уже включённой истории ничего не стирает: очистка
+/// нужна только при переходе из выключенного состояния.
+#[tokio::test]
+async fn enabling_password_history_again_keeps_it() {
+    let (env, _) = unlocked().await;
+    let canary = canary_id(&env);
+    change_value(&env, false, &canary, CHANGED);
+    assert_eq!(history_len(&env, false, &canary), Some(1));
+    crate::commands::settings::update_password_history(&env.state, true).unwrap();
+    assert_eq!(history_len(&env, false, &canary), Some(1));
+}
+
 #[tokio::test]
 async fn password_history_disable_is_atomic() {
     assert_atomic_outcomes(

@@ -117,6 +117,12 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
       setPin("");
       return;
     }
+    if (snapshot) {
+      // Принять откат можно только с PIN: после входа по FIDO2 его нет.
+      setPin("");
+      toast.error(t('lock.rollbackNeedsPin'));
+      return;
+    }
     setShake(true);
     setTimeout(() => setShake(false), 380);
     setPin("");

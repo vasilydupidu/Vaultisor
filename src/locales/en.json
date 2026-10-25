@@ -426,5 +426,6 @@
   "lock.rollbackTitle": "Data is older than expected",
   "lock.rollbackDesc": "The records or website-password files are older than the last confirmed state: they were replaced with earlier copies. Changes made after those copies are missing.",
   "lock.rollbackWarning": "If you did not restore these files yourself, do not continue: they may have been swapped. Continue only deliberately — this data will become current.",
-  "lock.rollbackAccept": "Continue with this data"
+  "lock.rollbackAccept": "Continue with this data",
+  "lock.rollbackNeedsPin": "The data is older than expected. Sign in with your PIN to see the details and decide whether to continue."
 }

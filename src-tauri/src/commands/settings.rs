@@ -346,6 +346,12 @@ pub(crate) fn update_password_history(state: &AppState, enabled: bool) -> Result
             // начинается с пустой истории, а недочищенное после выключения
             // дочищает следующий вход (`open_session_with`).
             let db = state.open_meta()?;
+            // Повтор того же значения ничего не меняет: иначе повторное
+            // включение стёрло бы накопленную историю.
+            let current = db.vault_load()?.ok_or(VaultError::NotInitialized)?;
+            if current.enable_password_history == enabled {
+                return Ok(());
+            }
             if enabled {
                 crate::storage::records::clear_all_password_history(records_db)?;
                 crate::storage::records::clear_all_password_history(web_db)?;
