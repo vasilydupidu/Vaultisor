@@ -213,7 +213,9 @@ pub async fn import_chromium_csv(
     capability: String,
     state: State<'_, AppState>,
 ) -> Result<ImportResult> {
-    import_csv(&state, &capability)
+    // Чтение файла, шифрование и запись в базу — не работа для потока рантайма.
+    let state = state.inner().clone();
+    crate::blocking::run(move || import_csv(&state, &capability)).await
 }
 
 pub(crate) fn import_csv(state: &AppState, capability: &str) -> Result<ImportResult> {
@@ -431,7 +433,9 @@ pub(crate) fn import_entries(
 /// Безопасное шредирование (затирание и удаление) файла с диска.
 #[tauri::command]
 pub async fn secure_delete_file(deletion_token: String, state: State<'_, AppState>) -> Result<()> {
-    delete_imported_csv(&state, &deletion_token)
+    // Затирание файла — синхронная запись и fsync.
+    let state = state.inner().clone();
+    crate::blocking::run(move || delete_imported_csv(&state, &deletion_token)).await
 }
 
 pub(crate) fn delete_imported_csv(state: &AppState, deletion_token: &str) -> Result<()> {

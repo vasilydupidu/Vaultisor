@@ -3,7 +3,7 @@
 use serde::Serialize;
 use tauri::State;
 
-use crate::error::Result;
+use crate::error::{Result, VaultError};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize)]
@@ -32,24 +32,70 @@ pub fn vault_exists(state: State<'_, AppState>) -> Result<bool> {
     vault_exists_at(&state)
 }
 
+/// Хранилище есть, если на диске лежит ХОТЬ ОДИН из трёх его файлов.
+///
+/// Создание и импорт отказываются работать при любом из них, поэтому ответ
+/// «нет» при остатках файлов отправил бы пользователя на онбординг, где оба
+/// действия упрутся в отказ. С остатками показывается экран входа, а вход
+/// объясняет, что именно не так (см. `require_complete_vault`).
 pub(crate) fn vault_exists_at(state: &AppState) -> Result<bool> {
-    let meta_path = state.meta_path();
-    let records_path = state.records_path();
+    let present = vault_files_present(state);
     log::info!(
-        "vault_exists: meta={} (exists={}), records={} (exists={})",
-        meta_path.display(),
-        meta_path.exists(),
-        records_path.display(),
-        records_path.exists(),
+        "vault_exists: meta={}, records={}, web={}",
+        present.meta,
+        present.records,
+        present.web,
     );
-    if !meta_path.exists() || !records_path.exists() {
-        log::warn!("vault_exists → false (один из файлов отсутствует)");
-        return Ok(false);
+    Ok(present.meta || present.records || present.web)
+}
+
+struct VaultFiles {
+    meta: bool,
+    records: bool,
+    web: bool,
+}
+
+fn vault_files_present(state: &AppState) -> VaultFiles {
+    VaultFiles {
+        meta: state.meta_path().exists(),
+        records: state.records_path().exists(),
+        web: state.web_path().exists(),
     }
-    let db = state.open_meta()?;
-    let initialized = db.vault_initialized()?;
-    log::info!("vault_exists → vault_initialized()={}", initialized);
-    Ok(initialized)
+}
+
+/// Вход в неполное хранилище должен объяснять, что делать, а не падать
+/// безликой ошибкой (а `open_meta` ещё и создал бы пустые метаданные на месте
+/// пропавших). Нет файла метаданных — по долям B и C восстановить нельзя: в
+/// них лежит конверт мастер-ключа, и остаётся только импорт резервной копии.
+pub(crate) fn require_complete_vault(state: &AppState) -> Result<()> {
+    let present = vault_files_present(state);
+    if present.meta && present.records && present.web {
+        return Ok(());
+    }
+    if !present.meta && !present.records && !present.web {
+        return Err(VaultError::NotInitialized);
+    }
+    let missing: Vec<&str> = [
+        (present.meta, "vault.meta.db"),
+        (present.records, "vault.records.db"),
+        (present.web, "vault.web.db"),
+    ]
+    .iter()
+    .filter(|(exists, _)| !exists)
+    .map(|(_, name)| *name)
+    .collect();
+    let advice = if present.meta {
+        "Переместите оставшиеся файлы vault.*.db из папки данных в другое место и \
+         импортируйте резервную копию на чистую установку."
+    } else {
+        "Восстановление по частям B и C здесь невозможно: данные для него хранятся в \
+         vault.meta.db. Переместите оставшиеся файлы vault.*.db из папки данных в другое \
+         место и импортируйте резервную копию на чистую установку."
+    };
+    Err(VaultError::BadInput(format!(
+        "Хранилище неполное: нет файлов {}. {advice}",
+        missing.join(", ")
+    )))
 }
 
 /// Heartbeat сессии из фронтенда для корректного авто-лока.

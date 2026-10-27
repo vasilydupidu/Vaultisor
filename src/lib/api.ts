@@ -254,17 +254,16 @@ export const apiRecordReveal = (dbType: "records" | "web", recordId: string, fie
   });
 
 // === Clipboard ===
+/** Срок автоочистки берёт backend из сохранённых настроек. */
 export const apiClipboardCopy = (
   dbType: "records" | "web",
   recordId: string,
   fieldId: string,
-  clearAfterSeconds?: number,
 ) =>
   invoke<void>("clipboard_copy_secret", {
     input: {
       record_id: recordId,
       field_id: fieldId,
-      clear_after_seconds: clearAfterSeconds ?? null,
       db_type: dbType,
     },
   });

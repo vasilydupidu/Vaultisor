@@ -9,7 +9,6 @@
 // Файл — текстовый, чтобы в случае повреждения USB пользователь мог
 // прочитать содержимое глазами и ввести вручную.
 
-use std::fs;
 use std::path::Path;
 
 use crate::crypto::shamir::Share;
@@ -29,8 +28,18 @@ pub fn write_share_file(path: &Path, share: &Share) -> Result<()> {
     crate::storage::fsio::write_atomic(path, body.as_bytes())
 }
 
+/// Файл с долей — несколько десятков байт; всё, что больше, — не он.
+const SHARE_FILE_MAX: u64 = 64 * 1024;
+
 pub fn read_share_file(path: &Path) -> Result<Share> {
-    let s = fs::read_to_string(path)?;
+    let raw = crate::commands::file_grants::read_regular_file_limited(
+        path,
+        SHARE_FILE_MAX,
+        "Файл части восстановления",
+    )?;
+    let s = String::from_utf8(raw).map_err(|_| {
+        VaultError::BadInput("Файл части восстановления не является текстом".into())
+    })?;
     parse_share_text(&s)
 }
 
@@ -99,6 +108,40 @@ mod tests {
         let restored = read_share_file(&path).unwrap();
         assert_eq!(restored.x, s.x);
         assert_eq!(restored.y, s.y);
+    }
+
+    #[test]
+    fn share_file_over_the_limit_or_not_a_file_is_rejected() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("share.vss");
+        let share = Share {
+            x: 3,
+            y: vec![9; 32],
+        };
+        write_share_file(&path, &share).unwrap();
+        assert_eq!(read_share_file(&path).unwrap().y, share.y);
+
+        let huge = dir.path().join("huge.vss");
+        let file = std::fs::File::create(&huge).unwrap();
+        file.set_len(SHARE_FILE_MAX + 1).unwrap();
+        drop(file);
+        assert!(matches!(
+            read_share_file(&huge),
+            Err(VaultError::BadInput(_))
+        ));
+
+        assert!(matches!(
+            read_share_file(dir.path()),
+            Err(VaultError::BadInput(_))
+        ));
+
+        let binary = dir.path().join("binary.vss");
+        std::fs::write(&binary, [0xff, 0xfe, 0x00, 0x80]).unwrap();
+        assert!(matches!(
+            read_share_file(&binary),
+            Err(VaultError::BadInput(_))
+        ));
+        assert_eq!(SHARE_FILE_MAX, 64 * 1024);
     }
 
     #[test]

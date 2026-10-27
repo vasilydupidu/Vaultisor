@@ -88,6 +88,7 @@ pub struct FieldMeta {
 
 /// Параметры создания/обновления записи.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RecordInput {
     pub name: String,
     pub project: Option<String>,
@@ -98,6 +99,7 @@ pub struct RecordInput {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FieldInput {
     /// Если задан — обновление существующего поля.
     pub id: Option<String>,

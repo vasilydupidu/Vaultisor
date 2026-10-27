@@ -114,7 +114,7 @@ fn read_config_at(data_dir: &Path, key: &[u8; 32]) -> Result<BackupConfig> {
 }
 
 /// Удобная обёртка для мест, где мьютекс сессии заведомо не удерживается.
-fn read_config(state: &AppState) -> Result<BackupConfig> {
+pub(crate) fn read_config(state: &AppState) -> Result<BackupConfig> {
     let key = session_integrity_key(state)?;
     read_config_at(&state.data_dir, &key)
 }
@@ -248,6 +248,14 @@ pub(crate) fn backup_now_blocking(state: &AppState, request_id: &str) -> Result<
                 .is_some_and(|n| n.starts_with("Vaultisor-backup-") && n.ends_with(&suffix))
         });
     if let Some(done) = done {
+        // Копия уже записана, но ответ или запись конфига могли пропасть:
+        // повтор догоняет `last_backup`, иначе автобэкап считал бы, что
+        // копии не было, и делал бы новую при каждом входе.
+        let written = std::fs::metadata(&done)
+            .and_then(|m| m.modified())
+            .map(chrono::DateTime::<chrono::Local>::from)
+            .unwrap_or_else(|_| chrono::Local::now());
+        record_backup(state, &session, &dir, written)?;
         log::info!("backup_now: request already completed");
         return Ok(BackupResult {
             path: done.to_string_lossy().to_string(),
@@ -277,15 +285,28 @@ pub(crate) fn backup_now_blocking(state: &AppState, request_id: &str) -> Result<
 
     apply_retention(target);
 
-    let mut cfg = read_config_at(&state.data_dir, &session.integrity_key)?;
-    cfg.dir = Some(dir.clone());
-    cfg.last_backup = Some(chrono::Local::now().to_rfc3339());
-    let _ = write_config_at(&state.data_dir, &session.integrity_key, &cfg);
+    // Ошибка записи конфига не скрывается: ответ «успешно» при несохранённом
+    // `last_backup` заставил бы автобэкап повторяться. Копия уже на диске,
+    // и повтор того же запроса найдёт её и допишет конфиг.
+    record_backup(state, &session, &dir, chrono::Local::now())?;
 
     log::info!("backup_now: wrote backup ({} bytes)", bundle.len());
     Ok(BackupResult {
         path: full.to_string_lossy().to_string(),
     })
+}
+
+/// Записать в конфиг каталог и время последней копии.
+fn record_backup(
+    state: &AppState,
+    session: &BackupSession,
+    dir: &str,
+    at: chrono::DateTime<chrono::Local>,
+) -> Result<()> {
+    let mut cfg = read_config_at(&state.data_dir, &session.integrity_key)?;
+    cfg.dir = Some(dir.to_owned());
+    cfg.last_backup = Some(at.to_rfc3339());
+    write_config_at(&state.data_dir, &session.integrity_key, &cfg)
 }
 
 /// Собрать VLT2-бандл из трёх зашифрованных БД (meta + records + web).
@@ -405,29 +426,46 @@ pub(crate) fn sanitize_meta_for_export_with_key(
 }
 
 /// Оставить последние KEEP_LAST копий, старые удалить.
+///
+/// Порядок — по времени изменения файла, при равенстве по имени. Имя несёт
+/// ЛОКАЛЬНОЕ время создания: после перевода часов или смены часового пояса
+/// более новая копия получила бы «меньшее» имя и была бы удалена вместо старой.
 fn apply_retention(dir: &Path) {
-    let mut backups: Vec<std::path::PathBuf> = match std::fs::read_dir(dir) {
+    let mut backups: Vec<(std::time::SystemTime, std::path::PathBuf)> = match std::fs::read_dir(dir)
+    {
         Ok(rd) => rd
             .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
                     .map(|n| n.starts_with("Vaultisor-backup-") && n.ends_with(".vault"))
                     .unwrap_or(false)
+            })
+            .map(|e| {
+                let modified = e
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                (modified, e.path())
             })
             .collect(),
         Err(_) => return,
     };
     backups.sort();
     if backups.len() > KEEP_LAST {
-        for old in &backups[..backups.len() - KEEP_LAST] {
+        for (_, old) in &backups[..backups.len() - KEEP_LAST] {
             let _ = std::fs::remove_file(old);
         }
     }
 }
 
-/// Валидация папки назначения: абсолютный путь, без `..`.
+/// Валидация папки назначения: абсолютный путь, без `..`, не сетевой.
+///
+/// Сетевой путь проверяется и по каноническому виду: диск, подключённый как
+/// `Z:`, после `canonicalize` оказывается `\\?\UNC\server\share`, а по
+/// строке из конфига этого не видно. Бэкап не должен уходить на SMB
+/// атакующего. Локальная папка облачного клиента (Я.Диск/OneDrive) — обычный
+/// путь с буквой диска, под ограничение не попадает.
 fn validate_dir(p: &str) -> Result<&Path> {
     let path = Path::new(p);
     if !path.is_absolute() {
@@ -441,18 +479,9 @@ fn validate_dir(p: &str) -> Result<&Path> {
             "Путь содержит запрещённые сегменты ..".into(),
         ));
     }
-    // Отклоняем UNC/сетевые пути — бэкап не должен уходить на SMB
-    // атакующего по инъектированному пути. Локальная папка облачного клиента
-    // (Я.Диск/OneDrive) — обычный путь с буквой диска, под ограничение не попадает.
-    #[cfg(windows)]
-    {
-        if matches!(path.components().next(), Some(std::path::Component::Prefix(prefix))
-            if !matches!(prefix.kind(), std::path::Prefix::Disk(_) | std::path::Prefix::VerbatimDisk(_)))
-        {
-            return Err(VaultError::BadInput(
-                "Сетевые и UNC-пути не поддерживаются".into(),
-            ));
-        }
+    crate::commands::file_grants::reject_network_path(path)?;
+    if path.exists() {
+        crate::commands::file_grants::canonical_local_path(path)?;
     }
     Ok(path)
 }
@@ -608,6 +637,95 @@ mod tests {
             dir.path().join("notes.txt").exists(),
             "посторонний файл не трогаем"
         );
+    }
+
+    fn set_mtime(path: &Path, at: std::time::SystemTime) {
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(at)
+            .unwrap();
+    }
+
+    fn backups_left(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("Vaultisor-backup-"))
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Имя несёт локальное время: после перевода часов самая новая копия
+    /// может иметь «меньшее» имя. Удаляться должна самая старая по времени.
+    #[test]
+    fn retention_orders_by_modified_time_not_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = std::time::SystemTime::now() - std::time::Duration::from_secs(86_400);
+        for i in 1..=5u64 {
+            let name = format!("Vaultisor-backup-2026010{i}-000000-aaaaaaaa.vault");
+            let path = dir.path().join(&name);
+            std::fs::write(&path, b"x").unwrap();
+            // Чем больше число в имени, тем СТАРШЕ файл.
+            set_mtime(&path, base + std::time::Duration::from_secs((6 - i) * 60));
+        }
+        apply_retention(dir.path());
+        assert_eq!(
+            backups_left(dir.path()),
+            [
+                "Vaultisor-backup-20260101-000000-aaaaaaaa.vault",
+                "Vaultisor-backup-20260102-000000-aaaaaaaa.vault",
+                "Vaultisor-backup-20260103-000000-aaaaaaaa.vault",
+            ],
+            "остались три самые новые по времени, а не по имени"
+        );
+    }
+
+    #[test]
+    fn retention_breaks_modified_time_ties_by_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let same = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        for i in 1..=5 {
+            let path = dir
+                .path()
+                .join(format!("Vaultisor-backup-2026010{i}-000000-bbbbbbbb.vault"));
+            std::fs::write(&path, b"x").unwrap();
+            set_mtime(&path, same);
+        }
+        apply_retention(dir.path());
+        assert_eq!(
+            backups_left(dir.path()),
+            [
+                "Vaultisor-backup-20260103-000000-bbbbbbbb.vault",
+                "Vaultisor-backup-20260104-000000-bbbbbbbb.vault",
+                "Vaultisor-backup-20260105-000000-bbbbbbbb.vault",
+            ]
+        );
+    }
+
+    #[test]
+    fn network_destinations_are_rejected_in_any_spelling() {
+        for bad in [
+            r"\\server\share\backups",
+            r"\\?\UNC\server\share\backups",
+            r"//server/share/backups",
+            r"\\.\PhysicalDrive0",
+        ] {
+            assert!(
+                matches!(validate_dir(bad), Err(VaultError::BadInput(_))),
+                "{bad}"
+            );
+        }
+        assert!(validate_dir(r"relative\dir").is_err());
+        assert!(validate_dir(r"C:\backups\..\other").is_err());
+        assert!(validate_dir(r"C:\backups").is_ok());
+        assert!(validate_dir(r"\\?\C:\backups").is_ok());
+        // Существующий локальный каталог проходит и по каноническому виду.
+        let dir = tempfile::tempdir().unwrap();
+        assert!(validate_dir(dir.path().to_str().unwrap()).is_ok());
     }
 
     #[test]

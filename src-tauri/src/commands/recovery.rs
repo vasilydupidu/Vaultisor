@@ -38,6 +38,7 @@ pub fn create_recovery_generation(
 /// selected by the backend-owned native dialog and is represented to the
 /// frontend only by a short-lived opaque capability.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PrepareSaveInput {
     pub share_hex: String,
     pub part: String,
@@ -115,7 +116,12 @@ pub async fn recovery_prepare_save(
 }
 
 #[tauri::command]
-pub fn recovery_save_to_usb(capability: String, state: State<'_, AppState>) -> Result<()> {
+pub async fn recovery_save_to_usb(capability: String, state: State<'_, AppState>) -> Result<()> {
+    let state = state.inner().clone();
+    crate::blocking::run(move || save_share_to_usb(&state, &capability)).await
+}
+
+pub(crate) fn save_share_to_usb(state: &AppState, capability: &str) -> Result<()> {
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
@@ -126,7 +132,7 @@ pub fn recovery_save_to_usb(capability: String, state: State<'_, AppState>) -> R
         let mut capabilities = state.pending_recovery_saves.lock();
         let now = std::time::Instant::now();
         capabilities.retain(|_, item| item.expires_at > now);
-        capabilities.remove(&capability).ok_or_else(|| {
+        capabilities.remove(capability).ok_or_else(|| {
             VaultError::BadInput(
                 "Полномочие сохранения недействительно или уже использовано".into(),
             )
@@ -141,11 +147,13 @@ pub fn recovery_save_to_usb(capability: String, state: State<'_, AppState>) -> R
 }
 
 fn canonical_save_path(path: &std::path::Path) -> Result<std::path::PathBuf> {
-    validate_user_path(path.to_string_lossy().as_ref())?;
+    validate_user_path(path)?;
     let parent = path
         .parent()
         .ok_or_else(|| VaultError::BadInput("У пути нет каталога назначения".into()))?;
-    let parent = std::fs::canonicalize(parent)?;
+    // Сетевой путь проверяется по каноническому виду каталога: подключённый
+    // диск Z: становится \\?\UNC\server\share только после canonicalize.
+    let parent = crate::commands::file_grants::canonical_local_path(parent)?;
     let name = path
         .file_name()
         .ok_or_else(|| VaultError::BadInput("Укажите имя файла".into()))?;
@@ -153,8 +161,7 @@ fn canonical_save_path(path: &std::path::Path) -> Result<std::path::PathBuf> {
 }
 
 /// Валидация пути от пользователя — защита от path traversal.
-fn validate_user_path(p: &str) -> Result<&std::path::Path> {
-    let path = std::path::Path::new(p);
+fn validate_user_path(path: &std::path::Path) -> Result<&std::path::Path> {
     if !path.is_absolute() {
         return Err(VaultError::BadInput("Путь должен быть абсолютным".into()));
     }
@@ -166,16 +173,12 @@ fn validate_user_path(p: &str) -> Result<&std::path::Path> {
             ));
         }
     }
-    // Отклоняем ЛЮБЫЕ UNC/сетевые/device-пути.
-    if p.starts_with(r"\\") {
-        return Err(VaultError::BadInput(
-            "Сетевые и UNC-пути не поддерживаются".into(),
-        ));
-    }
+    crate::commands::file_grants::reject_network_path(path)?;
     Ok(path)
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RestoreInput {
     /// Обе части, B и C, в формате "X|hex".
     pub shares_hex: Vec<String>,
@@ -215,6 +218,9 @@ pub(crate) async fn restore_from_shares(
     state: &AppState,
     input: RestoreInput,
 ) -> Result<RestoreOutput> {
+    // До блокировки сессии и любой работы: список из тысяч долей сделал бы
+    // перебор пар в open_envelope квадратичным.
+    check_share_count(input.shares_hex.len())?;
     let _auth_flow = state.auth_flow.lock().await;
     use crate::auth::pin::validate_secret_format;
 
@@ -318,6 +324,20 @@ pub(crate) async fn restore_from_shares(
     Ok(RestoreOutput { recovered: true })
 }
 
+/// Больше частей, чем есть (B и C), не бывает; запас нужен на повторный ввод
+/// и испорченную часть. Верхняя граница держит перебор пар в `open_envelope`
+/// ограниченным.
+const MAX_SUBMITTED_SHARES: usize = 4;
+
+fn check_share_count(count: usize) -> Result<()> {
+    if count > MAX_SUBMITTED_SHARES {
+        return Err(VaultError::BadInput(format!(
+            "Передано слишком много частей восстановления (не более {MAX_SUBMITTED_SHARES})"
+        )));
+    }
+    Ok(())
+}
+
 /// Собрать recovery-KEK из пары долей и открыть им конверт мастер-ключа.
 ///
 /// Схема Шамира не обнаруживает испорченную часть, поэтому перебираются пары
@@ -327,6 +347,7 @@ pub(crate) fn open_envelope(
     envelope: &[u8],
     generation: u64,
 ) -> Result<crate::crypto::master::MasterKey> {
+    check_share_count(shares.len())?;
     let blob = crate::crypto::aead::EncryptedBlob::from_bytes(envelope)
         .map_err(|_| VaultError::Recovery("Конверт восстановления повреждён".into()))?;
     for i in 0..shares.len() {
@@ -468,7 +489,12 @@ pub struct RecoveryStatus {
 }
 
 #[tauri::command]
-pub fn recovery_status(state: State<'_, AppState>) -> Result<RecoveryStatus> {
+pub async fn recovery_status(state: State<'_, AppState>) -> Result<RecoveryStatus> {
+    let state = state.inner().clone();
+    crate::blocking::run(move || status_of(&state)).await
+}
+
+pub(crate) fn status_of(state: &AppState) -> Result<RecoveryStatus> {
     if state.check_autolock() || !state.session.lock().is_unlocked() {
         return Err(VaultError::Locked);
     }
@@ -493,8 +519,9 @@ pub struct RecoveryRegenerateOutput {
 }
 
 #[tauri::command]
-pub fn recovery_regenerate(state: State<'_, AppState>) -> Result<RecoveryRegenerateOutput> {
-    regenerate_recovery(&state)
+pub async fn recovery_regenerate(state: State<'_, AppState>) -> Result<RecoveryRegenerateOutput> {
+    let state = state.inner().clone();
+    crate::blocking::run(move || regenerate_recovery(&state)).await
 }
 
 /// Создать новое поколение: прежнее отзывается тем же commit'ом.
@@ -532,8 +559,12 @@ pub struct AcknowledgeInput {
 
 /// Пользователь подтвердил, что сохранил доли B и C этого поколения.
 #[tauri::command]
-pub fn recovery_acknowledge(input: AcknowledgeInput, state: State<'_, AppState>) -> Result<()> {
-    acknowledge_recovery(&state, input.generation)
+pub async fn recovery_acknowledge(
+    input: AcknowledgeInput,
+    state: State<'_, AppState>,
+) -> Result<()> {
+    let state = state.inner().clone();
+    crate::blocking::run(move || acknowledge_recovery(&state, input.generation)).await
 }
 
 pub(crate) fn acknowledge_recovery(state: &AppState, generation: u64) -> Result<()> {
@@ -550,8 +581,9 @@ pub(crate) fn acknowledge_recovery(state: &AppState, generation: u64) -> Result<
 
 /// Отключить восстановление: отозвать поколение и удалить конверт.
 #[tauri::command]
-pub fn recovery_disable(state: State<'_, AppState>) -> Result<()> {
-    disable_recovery(&state)
+pub async fn recovery_disable(state: State<'_, AppState>) -> Result<()> {
+    let state = state.inner().clone();
+    crate::blocking::run(move || disable_recovery(&state)).await
 }
 
 pub(crate) fn disable_recovery(state: &AppState) -> Result<()> {
@@ -593,16 +625,21 @@ fn session_keys(
 }
 
 #[tauri::command]
-pub fn recovery_load_from_usb(
+pub async fn recovery_load_from_usb(
     input: LoadFromUsbInput,
     state: State<'_, AppState>,
 ) -> Result<ShareReadOutput> {
+    let state = state.inner().clone();
+    crate::blocking::run(move || load_share_from_usb(&state, &input.capability)).await
+}
+
+pub(crate) fn load_share_from_usb(state: &AppState, capability: &str) -> Result<ShareReadOutput> {
     if state.check_autolock() {
         return Err(VaultError::Locked);
     }
     let session = state.session.lock();
     let path = state.file_grants.lock().consume(
-        &input.capability,
+        capability,
         crate::commands::file_grants::FileOperation::RecoveryRead,
         crate::commands::file_grants::session_stamp(&session),
     )?;
@@ -636,4 +673,79 @@ pub(crate) fn parse_share_hex(s: &str) -> Result<Share> {
         ));
     }
     Ok(Share { x, y })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_path_validation_runs_on_the_canonical_path_and_rejects_network_targets() {
+        for bad in [
+            r"\\server\share\part.vss",
+            r"\\?\UNC\server\share\part.vss",
+            r"//server/share/part.vss",
+            r"relative\part.vss",
+            r"C:\dir\..\part.vss",
+        ] {
+            assert!(
+                matches!(
+                    canonical_save_path(std::path::Path::new(bad)),
+                    Err(VaultError::BadInput(_))
+                ),
+                "{bad}"
+            );
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let wanted = dir.path().join("part.vss");
+        let canonical = canonical_save_path(&wanted).unwrap();
+        assert_eq!(canonical.file_name().unwrap(), "part.vss");
+        assert_eq!(
+            canonical.parent().unwrap(),
+            dir.path().canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn envelope_search_refuses_more_than_four_shares() {
+        let share = Share {
+            x: 1,
+            y: vec![1; 32],
+        };
+        let many = vec![share.clone(); MAX_SUBMITTED_SHARES + 1];
+        // Конверт не разбирается: отказ наступает раньше любой работы.
+        assert!(matches!(
+            open_envelope(&many, b"not an envelope", 1),
+            Err(VaultError::BadInput(_))
+        ));
+        let thousands = vec![share; 5000];
+        assert!(matches!(
+            open_envelope(&thousands, b"not an envelope", 1),
+            Err(VaultError::BadInput(_))
+        ));
+        assert!(check_share_count(MAX_SUBMITTED_SHARES).is_ok());
+    }
+
+    #[test]
+    fn recovery_inputs_reject_unknown_keys() {
+        use serde_json::json;
+        assert!(serde_json::from_value::<RestoreInput>(
+            json!({"shares_hex": [], "new_pin": "p", "x": 1})
+        )
+        .is_err());
+        assert!(serde_json::from_value::<PrepareSaveInput>(
+            json!({"share_hex": "1|aa", "part": "B", "path": "C:\\x"})
+        )
+        .is_err());
+        assert!(
+            serde_json::from_value::<LoadFromUsbInput>(json!({"capability": "t", "x": 1})).is_err()
+        );
+        assert!(
+            serde_json::from_value::<AcknowledgeInput>(json!({"generation": 1, "x": 1})).is_err()
+        );
+        assert!(
+            serde_json::from_value::<RestoreInput>(json!({"shares_hex": [], "new_pin": "p"}))
+                .is_ok()
+        );
+    }
 }
