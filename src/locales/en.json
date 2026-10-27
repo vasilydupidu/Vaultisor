@@ -118,6 +118,7 @@
   "recoveryFlow.failed": "Recovery failed",
   "recoveryFlow.deviceMismatchDesc": "The vault was created on another device or for another Windows account. Enter both recovery parts — B and C.",
   "recoveryFlow.forgotPinDesc": "Enter both recovery parts — B and C. One part is not enough, even on this device.",
+  "recoveryFlow.tamperedDesc": "The vault metadata failed its integrity check, or an imported copy would have weakened this device's protection (switched Windows Hello off, brought back an old PIN). Access is possible only through recovery: enter both parts — B and C.",
   "recoveryFlow.partLoaded": "✓ loaded",
   "recoveryFlow.manualPlaceholder": "e.g.: 3|a1b2c3...",
   "recoveryFlow.newPin": "New PIN",

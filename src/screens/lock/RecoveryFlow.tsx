@@ -66,7 +66,7 @@ function ShareSlotField({ title, slot, disabled, onPickFile, onChange }: ShareSl
 }
 
 interface RecoveryFlowProps {
-  reason: "forgot-pin" | "device-mismatch";
+  reason: "forgot-pin" | "device-mismatch" | "tampered";
   tpmAvailable: boolean;
   onDone: () => void;
   onResetParent: () => void;
@@ -155,7 +155,9 @@ export function RecoveryFlow({
       <p className="text-sm text-white/60">
         {reason === "device-mismatch"
           ? t('recoveryFlow.deviceMismatchDesc')
-          : t('recoveryFlow.forgotPinDesc')}
+          : reason === "tampered"
+            ? t('recoveryFlow.tamperedDesc')
+            : t('recoveryFlow.forgotPinDesc')}
       </p>
 
       <ShareSlotField

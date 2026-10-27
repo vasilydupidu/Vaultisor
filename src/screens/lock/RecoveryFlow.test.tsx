@@ -53,6 +53,14 @@ describe("RecoveryFlow", () => {
   });
   afterEach(cleanup);
 
+  it("после подмены метаданных объясняет причину и требует обе части", () => {
+    render(
+      <RecoveryFlow reason="tampered" tpmAvailable onDone={vi.fn()} onResetParent={vi.fn()} />,
+    );
+    expect(screen.getByText("recoveryFlow.tamperedDesc")).toBeTruthy();
+    expect(restoreButton().hasAttribute("disabled")).toBe(true);
+  });
+
   it("кнопка восстановления доступна только когда загружены обе части", () => {
     setup(true);
     expect(restoreButton().hasAttribute("disabled")).toBe(true);

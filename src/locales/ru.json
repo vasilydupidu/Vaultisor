@@ -118,6 +118,7 @@
   "recoveryFlow.failed": "Восстановление не удалось",
   "recoveryFlow.deviceMismatchDesc": "Хранилище создано на другом устройстве или для другой учётной записи Windows. Введите обе части восстановления — B и C.",
   "recoveryFlow.forgotPinDesc": "Введите обе части восстановления — B и C. Одной части недостаточно даже на этом устройстве.",
+  "recoveryFlow.tamperedDesc": "Целостность метаданных хранилища нарушена, либо импортированная копия ослабила бы защиту этого устройства (выключила Windows Hello, вернула прежний PIN). Вход возможен только восстановлением: введите обе части — B и C.",
   "recoveryFlow.partLoaded": "✓ загружена",
   "recoveryFlow.manualPlaceholder": "напр.: 3|a1b2c3...",
   "recoveryFlow.newPin": "Новый PIN",

@@ -60,7 +60,7 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
   const [rollbackId, setRollbackId] = useState<string | null>(null);
   const [acceptingRollback, setAcceptingRollback] = useState(false);
   const [recoverReason, setRecoverReason] =
-    useState<"forgot-pin" | "device-mismatch">("forgot-pin");
+    useState<"forgot-pin" | "device-mismatch" | "tampered">("forgot-pin");
   const [helloAvailable, setHelloAvailable] = useState(false);
   const [fido2Available, setFido2Available] = useState(false);
   const [tpmAvailable, setTpmAvailable] = useState(true);
@@ -107,6 +107,13 @@ export function LockScreen({ onUnlocked, onReset }: Props) {
     const raw = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
     if (raw.includes("DEVICE_MISMATCH")) {
       setRecoverReason("device-mismatch");
+      setRecoverOpen(true);
+      return;
+    }
+    // Метаданные не прошли проверку (подмена или импорт копии, ослабившей бы
+    // защиту этого устройства): вход только восстановлением по частям B и C.
+    if (raw.includes("META_TAMPERED")) {
+      setRecoverReason("tampered");
       setRecoverOpen(true);
       return;
     }
