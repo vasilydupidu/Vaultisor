@@ -25,6 +25,14 @@ use crate::error::{Result, VaultError};
 /// были криптографически независимы.
 pub const DS_KEK_CHALLENGE: &[u8] = b"vaultisor:device-secret-kek-challenge:v1";
 
+/// AAD конверта Device Secret. Имя TPM-ключа входит в него, поэтому конверт,
+/// снятый с одного ключа, нельзя подсунуть под именем другого.
+fn device_secret_aad(tpm_key_name: &str) -> Vec<u8> {
+    let mut aad = b"vaultisor:device-secret:v2:".to_vec();
+    aad.extend_from_slice(tpm_key_name.as_bytes());
+    aad
+}
+
 /// Данные для хранения Device Secret в БД.
 #[derive(Debug, Clone)]
 pub struct DeviceSecretData {
@@ -54,7 +62,7 @@ pub fn generate_and_encrypt(
     let kek = derive_ds_kek(tpm_signature)?;
 
     // Шифрование device_secret под KEK.
-    let blob = aead::encrypt(&kek, &*device_secret, b"vaultisor:device-secret:v1")?;
+    let blob = aead::encrypt(&kek, &*device_secret, &device_secret_aad(tpm_key_name))?;
     let encrypted_blob = blob.to_bytes();
 
     Ok((
@@ -74,18 +82,15 @@ pub fn decrypt_device_secret(
     data: &DeviceSecretData,
     tpm_signature: &[u8],
 ) -> Result<Zeroizing<[u8; 32]>> {
-    use zeroize::Zeroize;
-
     let kek = derive_ds_kek(tpm_signature)?;
 
     let blob = aead::EncryptedBlob::from_bytes(&data.encrypted_blob)?;
-    let mut plaintext =
-        aead::decrypt(&kek, &blob, b"vaultisor:device-secret:v1").map_err(|_| {
+    let plaintext =
+        aead::decrypt(&kek, &blob, &device_secret_aad(&data.tpm_key_name)).map_err(|_| {
             VaultError::Crypto("device secret: decryption failed (wrong TPM signature?)".into())
         })?;
 
     if plaintext.len() != 32 {
-        plaintext.zeroize();
         return Err(VaultError::Crypto(
             "device secret: decrypted blob has wrong length".into(),
         ));
@@ -93,7 +98,6 @@ pub fn decrypt_device_secret(
 
     let mut secret = Zeroizing::new([0u8; 32]);
     secret.copy_from_slice(&plaintext);
-    plaintext.zeroize();
     Ok(secret)
 }
 
@@ -125,57 +129,66 @@ mod tests {
     #[test]
     fn generate_and_decrypt_roundtrip() {
         let sig = fake_tpm_signature();
-        if let Ok((secret_raw, data)) = generate_and_encrypt("test-tpm-key", &sig) {
-            let secret_dec = decrypt_device_secret(&data, &sig).unwrap();
-            assert_eq!(
-                secret_raw.as_slice(),
-                secret_dec.as_slice(),
-                "расшифрованный device secret должен совпадать с оригиналом"
-            );
-        }
+        let (secret_raw, data) =
+            generate_and_encrypt("test-tpm-key", &sig).expect("шифрование device secret");
+        let secret_dec = decrypt_device_secret(&data, &sig).expect("расшифровка device secret");
+        assert_eq!(
+            secret_raw.as_slice(),
+            secret_dec.as_slice(),
+            "расшифрованный device secret должен совпадать с оригиналом"
+        );
     }
 
     #[test]
     fn wrong_signature_fails_decryption() {
         let sig1 = fake_tpm_signature();
-        if let Ok((_secret, data)) = generate_and_encrypt("test-tpm-key", &sig1) {
-            let sig2 = fake_tpm_signature();
-            let result = decrypt_device_secret(&data, &sig2);
-            assert!(
-                result.is_err(),
-                "расшифровка с чужой подписью должна вернуть ошибку"
-            );
-        }
+        let (_secret, data) =
+            generate_and_encrypt("test-tpm-key", &sig1).expect("шифрование device secret");
+        let sig2 = fake_tpm_signature();
+        let result = decrypt_device_secret(&data, &sig2);
+        assert!(
+            result.is_err(),
+            "расшифровка с чужой подписью должна вернуть ошибку"
+        );
+    }
+
+    /// Конверт привязан к имени TPM-ключа: под другим именем он не открывается,
+    /// даже с верной подписью.
+    #[test]
+    fn blob_cannot_be_replayed_under_another_key_name() {
+        let sig = fake_tpm_signature();
+        let (_secret, mut data) =
+            generate_and_encrypt("key-a", &sig).expect("шифрование device secret");
+        data.tpm_key_name = "key-b".to_string();
+        assert!(decrypt_device_secret(&data, &sig).is_err());
+        data.tpm_key_name = "key-a".to_string();
+        assert!(decrypt_device_secret(&data, &sig).is_ok());
     }
 
     #[test]
     fn tpm_key_name_preserved() {
         let sig = fake_tpm_signature();
-        if let Ok((_secret, data)) = generate_and_encrypt("my-ncrypt-key", &sig) {
-            assert_eq!(data.tpm_key_name, "my-ncrypt-key");
-        }
+        let (_secret, data) =
+            generate_and_encrypt("my-ncrypt-key", &sig).expect("шифрование device secret");
+        assert_eq!(data.tpm_key_name, "my-ncrypt-key");
     }
 
     #[test]
     fn device_secret_is_32_bytes() {
         let sig = fake_tpm_signature();
-        if let Ok((secret, _data)) = generate_and_encrypt("test", &sig) {
-            assert_eq!(secret.len(), 32);
-        }
+        let (secret, _data) = generate_and_encrypt("test", &sig).expect("шифрование device secret");
+        assert_eq!(secret.len(), 32);
     }
 
     #[test]
     fn two_generate_calls_produce_different_secrets() {
         let sig = fake_tpm_signature();
-        if let (Ok((s1, _d1)), Ok((s2, _d2))) = (
-            generate_and_encrypt("key", &sig),
-            generate_and_encrypt("key", &sig),
-        ) {
-            assert_ne!(
-                s1.as_slice(),
-                s2.as_slice(),
-                "два вызова generate должны дать разные device secret"
-            );
-        }
+        let (s1, _d1) = generate_and_encrypt("key", &sig).expect("первый вызов");
+        let (s2, _d2) = generate_and_encrypt("key", &sig).expect("второй вызов");
+        assert_ne!(
+            s1.as_slice(),
+            s2.as_slice(),
+            "два вызова generate должны дать разные device secret"
+        );
     }
 }

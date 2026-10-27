@@ -6,7 +6,6 @@
 use aes_gcm::aead::{Aead, KeyInit, Payload};
 use aes_gcm::{Aes256Gcm, Nonce};
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroize;
 
 use super::rng;
 use crate::error::{CoreError, Result};
@@ -78,7 +77,14 @@ pub fn encrypt(key: &[u8; KEY_LEN], plaintext: &[u8], aad: &[u8]) -> Result<Encr
 }
 
 /// Дешифрование с контекстной привязкой AAD.
-pub fn decrypt(key: &[u8; KEY_LEN], blob: &EncryptedBlob, aad: &[u8]) -> Result<Vec<u8>> {
+///
+/// Открытый текст — секрет (мастер-ключ, поля записей), поэтому возвращается
+/// в `Zeroizing`: буфер затирается при освобождении на любом пути выхода.
+pub fn decrypt(
+    key: &[u8; KEY_LEN],
+    blob: &EncryptedBlob,
+    aad: &[u8],
+) -> Result<zeroize::Zeroizing<Vec<u8>>> {
     if blob.nonce.len() != NONCE_LEN {
         return Err(CoreError::Crypto("bad nonce length".into()));
     }
@@ -92,7 +98,7 @@ pub fn decrypt(key: &[u8; KEY_LEN], blob: &EncryptedBlob, aad: &[u8]) -> Result<
             aad,
         },
     )?;
-    Ok(pt)
+    Ok(zeroize::Zeroizing::new(pt))
 }
 
 /// Вспомогательная функция: расшифровать UTF-8 строку.
@@ -102,13 +108,10 @@ pub fn decrypt_string(
     aad: &[u8],
 ) -> Result<zeroize::Zeroizing<String>> {
     let bytes = decrypt(key, blob, aad)?;
-    match String::from_utf8(bytes) {
-        Ok(s) => Ok(zeroize::Zeroizing::new(s)),
-        Err(e) => {
-            let mut original = e.into_bytes();
-            original.zeroize();
-            Err(CoreError::Crypto("invalid utf-8 in plaintext".into()))
-        }
+    // Копия в строку; исходный буфер затирается при освобождении `bytes`.
+    match std::str::from_utf8(&bytes) {
+        Ok(s) => Ok(zeroize::Zeroizing::new(s.to_owned())),
+        Err(_) => Err(CoreError::Crypto("invalid utf-8 in plaintext".into())),
     }
 }
 
@@ -126,7 +129,7 @@ mod tests {
         let pt = b"hello, vaultisor!";
         let blob = encrypt(&key, pt, b"").unwrap();
         let dec = decrypt(&key, &blob, b"").unwrap();
-        assert_eq!(dec, pt);
+        assert_eq!(dec.as_slice(), pt);
     }
 
     #[test]
@@ -136,7 +139,26 @@ mod tests {
         let aad = b"record:42:field:api_key";
         let blob = encrypt(&key, pt, aad).unwrap();
         let dec = decrypt(&key, &blob, aad).unwrap();
-        assert_eq!(dec, pt);
+        assert_eq!(dec.as_slice(), pt);
+    }
+
+    /// Открытый текст возвращается в `Zeroizing`: тип сам затирает буфер при
+    /// освобождении, вызывающему не нужно помнить о ручной зачистке.
+    #[test]
+    fn decrypt_returns_zeroizing_buffer() {
+        let key = key32();
+        let blob = encrypt(&key, b"secret", b"").unwrap();
+        let dec: zeroize::Zeroizing<Vec<u8>> = decrypt(&key, &blob, b"").unwrap();
+        assert_eq!(dec.as_slice(), b"secret");
+    }
+
+    #[test]
+    fn decrypt_string_rejects_invalid_utf8() {
+        let key = key32();
+        let blob = encrypt(&key, &[0xff, 0xfe, 0xfd], b"").unwrap();
+        assert!(decrypt_string(&key, &blob, b"").is_err());
+        let blob = encrypt(&key, "пароль".as_bytes(), b"").unwrap();
+        assert_eq!(&*decrypt_string(&key, &blob, b"").unwrap(), "пароль");
     }
 
     #[test]

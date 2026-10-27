@@ -38,6 +38,15 @@ use crate::error::{Result, VaultError};
 // вынесен как отдельная будущая фича.
 const ENTROPY: &[u8] = b"vaultisor:dpapi:v1";
 
+/// Длина для `CRYPT_INTEGER_BLOB`: поле 32-битное, и усечение `as u32`
+/// передало бы DPAPI укороченный буфер вместо отказа.
+fn blob_len(len: usize) -> Result<u32> {
+    u32::try_from(len).map_err(|_| {
+        log::warn!("DPAPI: buffer of {len} bytes does not fit CRYPT_INTEGER_BLOB");
+        VaultError::DpapiFailure
+    })
+}
+
 /// Проверка доступности DPAPI: пробуем round-trip короткой строки.
 pub fn is_available() -> bool {
     let probe = b"\x01\x02\x03\x04";
@@ -60,11 +69,11 @@ pub fn protect_with_entropy(plaintext: &[u8], entropy_bytes: &[u8]) -> Result<Ve
     // - output.pbData is allocated by the OS and we correctly free it using LocalFree after use.
     unsafe {
         let input = CRYPT_INTEGER_BLOB {
-            cbData: plaintext.len() as u32,
+            cbData: blob_len(plaintext.len())?,
             pbData: plaintext.as_ptr() as *mut u8,
         };
         let entropy = CRYPT_INTEGER_BLOB {
-            cbData: entropy_bytes.len() as u32,
+            cbData: blob_len(entropy_bytes.len())?,
             pbData: entropy_bytes.as_ptr() as *mut u8,
         };
         let mut output = CRYPT_INTEGER_BLOB::default();
@@ -122,11 +131,11 @@ pub fn unprotect_with_entropy(
     // - Plaintext is safely zeroized before freeing.
     unsafe {
         let input = CRYPT_INTEGER_BLOB {
-            cbData: blob.len() as u32,
+            cbData: blob_len(blob.len())?,
             pbData: blob.as_ptr() as *mut u8,
         };
         let entropy = CRYPT_INTEGER_BLOB {
-            cbData: entropy_bytes.len() as u32,
+            cbData: blob_len(entropy_bytes.len())?,
             pbData: entropy_bytes.as_ptr() as *mut u8,
         };
         let mut output = CRYPT_INTEGER_BLOB::default();
@@ -151,10 +160,11 @@ pub fn unprotect_with_entropy(
         let result = if output.pbData.is_null() || output.cbData == 0 {
             Vec::new()
         } else {
-            let slice = std::slice::from_raw_parts(output.pbData, output.cbData as usize);
+            let slice = std::slice::from_raw_parts_mut(output.pbData, output.cbData as usize);
             let copied = slice.to_vec();
-            // HIGH-02: scrub the system-allocated plaintext buffer before freeing.
-            std::ptr::write_bytes(output.pbData, 0, output.cbData as usize);
+            // Открытый текст в буфере ОС затирается до освобождения; `zeroize`
+            // пишет через volatile и не выбрасывается как мёртвая запись.
+            zeroize::Zeroize::zeroize(slice);
             copied
         };
         if !output.pbData.is_null() {
@@ -176,11 +186,18 @@ mod tests {
     #[cfg(windows)]
     fn dpapi_roundtrip() {
         let secret = b"vaultisor-dpapi-test-secret";
-        if let Ok(blob) = protect(secret) {
-            assert_ne!(blob.as_slice(), secret); // действительно зашифровано
-            let restored = unprotect(&blob).expect("unprotect must succeed when protect succeeded");
-            assert_eq!(restored.as_slice(), secret);
-        }
+        let blob = protect(secret).expect("DPAPI protect недоступен в этой сессии Windows");
+        assert_ne!(blob.as_slice(), secret); // действительно зашифровано
+        let restored = unprotect(&blob).expect("unprotect must succeed when protect succeeded");
+        assert_eq!(restored.as_slice(), secret);
+    }
+
+    #[test]
+    fn oversized_buffers_are_refused_not_truncated() {
+        assert_eq!(blob_len(0).unwrap(), 0);
+        assert_eq!(blob_len(u32::MAX as usize).unwrap(), u32::MAX);
+        #[cfg(target_pointer_width = "64")]
+        assert!(blob_len(u32::MAX as usize + 1).is_err());
     }
 
     #[test]
@@ -188,15 +205,15 @@ mod tests {
     fn dpapi_custom_entropy_roundtrip() {
         let secret = b"vaultisor-dpapi-custom-entropy-secret";
         let entropy = b"custom:entropy:test:123";
-        if let Ok(blob) = protect_with_entropy(secret, entropy) {
-            assert_ne!(blob.as_slice(), secret);
-            let restored = unprotect_with_entropy(&blob, entropy)
-                .expect("unprotect_with_entropy must succeed");
-            assert_eq!(restored.as_slice(), secret);
+        let blob = protect_with_entropy(secret, entropy)
+            .expect("DPAPI protect недоступен в этой сессии Windows");
+        assert_ne!(blob.as_slice(), secret);
+        let restored =
+            unprotect_with_entropy(&blob, entropy).expect("unprotect_with_entropy must succeed");
+        assert_eq!(restored.as_slice(), secret);
 
-            // Wrong entropy must fail to unprotect
-            let wrong_entropy = b"wrong:entropy:456";
-            assert!(unprotect_with_entropy(&blob, wrong_entropy).is_err());
-        }
+        // Wrong entropy must fail to unprotect
+        let wrong_entropy = b"wrong:entropy:456";
+        assert!(unprotect_with_entropy(&blob, wrong_entropy).is_err());
     }
 }

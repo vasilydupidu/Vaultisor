@@ -65,12 +65,12 @@ impl BackoffState {
         if now < self.last_failure {
             return Gate::ClockRewound(BackoffState {
                 failures: self.failures,
-                next_allowed: now + MAX_DELAY_SECS,
+                next_allowed: now.saturating_add(MAX_DELAY_SECS),
                 last_failure: now,
             });
         }
         if now < self.next_allowed {
-            Gate::Wait(self.next_allowed - now)
+            Gate::Wait(self.next_allowed.saturating_sub(now))
         } else {
             Gate::Open
         }
@@ -81,7 +81,7 @@ impl BackoffState {
         let failures = self.failures.saturating_add(1);
         BackoffState {
             failures,
-            next_allowed: now + delay_after(failures),
+            next_allowed: now.saturating_add(delay_after(failures)),
             last_failure: now,
         }
     }
@@ -155,6 +155,43 @@ mod tests {
             }
             other => panic!("ожидался откат часов, получено {other:?}"),
         }
+    }
+
+    /// Часы с экстремальными значениями не вызывают переполнения (паники в
+    /// отладочной сборке, обхода задержки по оборачиванию в релизной).
+    #[test]
+    fn extreme_clock_values_do_not_overflow() {
+        let late = BackoffState::default().after_failure(i64::MAX - 10);
+        assert_eq!(late.failures, 1);
+        let state = BackoffState {
+            failures: 10,
+            next_allowed: 0,
+            last_failure: 0,
+        };
+        let failed = state.after_failure(i64::MAX - 10);
+        assert_eq!(
+            failed.next_allowed,
+            i64::MAX,
+            "насыщение вместо оборачивания"
+        );
+        assert_eq!(failed.gate(i64::MAX - 10), Gate::Wait(10));
+
+        // Откат часов к минимальному значению: задержка считается от «сейчас».
+        match failed.gate(i64::MIN) {
+            Gate::ClockRewound(next) => {
+                assert_eq!(next.next_allowed, i64::MIN + MAX_DELAY_SECS);
+                assert_eq!(next.gate(i64::MIN), Gate::Wait(MAX_DELAY_SECS));
+            }
+            other => panic!("ожидался откат часов, получено {other:?}"),
+        }
+
+        // Разность next_allowed - now не переполняется при полном размахе i64.
+        let wide = BackoffState {
+            failures: 1,
+            next_allowed: i64::MAX,
+            last_failure: i64::MIN,
+        };
+        assert_eq!(wide.gate(i64::MIN), Gate::Wait(i64::MAX));
     }
 
     #[test]

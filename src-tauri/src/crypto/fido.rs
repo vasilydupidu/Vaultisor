@@ -17,7 +17,7 @@
 //! мастер-ключ не дают: без TPM исходного ПК нет Device Secret. PIN Vaultisor
 //! при этом не нужен — Device Secret получается автоматически.
 
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use crate::crypto::aead::{self, EncryptedBlob};
 use crate::crypto::master::MasterKey;
@@ -69,19 +69,15 @@ pub fn unwrap_master(
         .map_err(|_| VaultError::DeviceMismatch)?;
     let blob = EncryptedBlob::from_bytes(&sealed)?;
     let key = kek(prf, device_secret, credential_id)?;
-    let mut plain = aead::decrypt(&key, &blob, WRAP_AAD).map_err(|_| {
+    let plain = aead::decrypt(&key, &blob, WRAP_AAD).map_err(|_| {
         VaultError::FidoFailed("ключ FIDO2 не подходит к этому хранилищу на этом устройстве".into())
     })?;
     if plain.len() != 32 {
-        plain.zeroize();
         return Err(VaultError::Crypto("fido2 blob has wrong length".into()));
     }
-    let mut buf = [0u8; 32];
+    let mut buf = Zeroizing::new([0u8; 32]);
     buf.copy_from_slice(&plain);
-    plain.zeroize();
-    let master = MasterKey::new(buf);
-    buf.zeroize();
-    Ok(master)
+    Ok(crate::crypto::master::seal_master_key(&mut buf))
 }
 
 #[cfg(test)]

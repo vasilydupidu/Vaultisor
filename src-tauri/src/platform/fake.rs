@@ -32,13 +32,20 @@ pub struct FakeToken {
     pub cred_random_no_uv: [u8; 32],
 }
 
+/// Credential Windows Hello: user.id, с которым он создан, и его публичный
+/// ключ (проверка Hello сверяет ключ, как настоящая ОС проверяет подпись).
+struct FakeHello {
+    user: [u8; 16],
+    public_key: Vec<u8>,
+}
+
 #[derive(Default)]
 struct State {
     tpm_supported: bool,
     tpm_keys: BTreeMap<String, [u8; 32]>,
     hello_supported: bool,
-    /// Имя credential'а → user.id, с которым он создан.
-    hello_keys: BTreeMap<String, [u8; 16]>,
+    /// Имя credential'а → его user.id и публичный ключ.
+    hello_keys: BTreeMap<String, FakeHello>,
     /// Следующая проверка Hello провалится (пользователь отменил).
     hello_refuse: bool,
     /// credential_id → токен, на котором он создан.
@@ -193,25 +200,29 @@ impl Platform for FakePlatform {
 
     fn hello_create(&self, user_handle: &[u8; 16]) -> Result<HelloCredential> {
         let name = self.next_id("webauthn-platform-v1:fake-");
-        self.state
-            .lock()
-            .hello_keys
-            .insert(name.clone(), *user_handle);
-        Ok(HelloCredential {
-            name,
-            public_key: vec![4; 65],
-        })
+        // Несжатый SEC1: 0x04 ‖ X ‖ Y; у каждого credential'а свой.
+        let mut public_key = vec![4u8];
+        public_key.extend_from_slice(&crate::crypto::rng::random_vec(64));
+        self.state.lock().hello_keys.insert(
+            name.clone(),
+            FakeHello {
+                user: *user_handle,
+                public_key: public_key.clone(),
+            },
+        );
+        Ok(HelloCredential { name, public_key })
     }
 
-    fn hello_verify(&self, name: &str, _public_key: &[u8]) -> Result<()> {
+    fn hello_verify(&self, name: &str, public_key: &[u8]) -> Result<()> {
         let mut state = self.state.lock();
         if std::mem::take(&mut state.hello_refuse) {
             return Err(VaultError::HelloCancelled);
         }
-        if state.hello_keys.contains_key(name) {
-            Ok(())
-        } else {
-            Err(VaultError::HelloOsError("0x80090011 NotFound".into()))
+        match state.hello_keys.get(name) {
+            // Подпись чужим ключом настоящая ОС не пропустила бы.
+            Some(hello) if hello.public_key == public_key => Ok(()),
+            Some(_) => Err(VaultError::CorruptedWrapper),
+            None => Err(VaultError::HelloOsError("0x80090011 NotFound".into())),
         }
     }
 
@@ -225,7 +236,7 @@ impl Platform for FakePlatform {
             .lock()
             .hello_keys
             .iter()
-            .filter(|(_, user)| *user == user_handle)
+            .filter(|(_, hello)| hello.user == *user_handle)
             .map(|(name, _)| name.clone())
             .collect())
     }

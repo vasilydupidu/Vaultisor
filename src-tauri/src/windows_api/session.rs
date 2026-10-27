@@ -99,6 +99,22 @@ unsafe extern "system" fn window_proc(
     unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
 }
 
+/// Что делать циклу сообщений по результату `GetMessageW`.
+#[derive(Debug, PartialEq, Eq)]
+enum MessageStep {
+    Dispatch,
+    Quit,
+    Failed,
+}
+
+fn message_step(result: i32) -> MessageStep {
+    match result {
+        0 => MessageStep::Quit,
+        -1 => MessageStep::Failed,
+        _ => MessageStep::Dispatch,
+    }
+}
+
 fn run_watcher() -> crate::error::Result<()> {
     use crate::error::VaultError;
 
@@ -138,9 +154,20 @@ fn run_watcher() -> crate::error::Result<()> {
         log::info!("session lock watcher registered");
 
         let mut message = MSG::default();
-        while GetMessageW(&mut message, None, 0, 0).as_bool() {
-            let _ = TranslateMessage(&message);
-            DispatchMessageW(&message);
+        loop {
+            // GetMessageW возвращает 0 (WM_QUIT), -1 (ошибка) или > 0; BOOL
+            // тут трёхзначен, и `as_bool()` принял бы -1 за «есть сообщение».
+            match message_step(GetMessageW(&mut message, None, 0, 0).0) {
+                MessageStep::Dispatch => {
+                    let _ = TranslateMessage(&message);
+                    DispatchMessageW(&message);
+                }
+                MessageStep::Quit => break,
+                MessageStep::Failed => {
+                    log::warn!("session lock watcher: GetMessageW failed, loop stopped");
+                    break;
+                }
+            }
         }
 
         let _ = WTSUnRegisterSessionNotification(hwnd);
@@ -151,6 +178,14 @@ fn run_watcher() -> crate::error::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// -1 — ошибка, а не сообщение: иначе цикл крутился бы без остановки.
+    #[test]
+    fn get_message_result_is_three_valued() {
+        assert_eq!(message_step(1), MessageStep::Dispatch);
+        assert_eq!(message_step(0), MessageStep::Quit);
+        assert_eq!(message_step(-1), MessageStep::Failed);
+    }
 
     #[test]
     fn locking_events_are_recognised() {

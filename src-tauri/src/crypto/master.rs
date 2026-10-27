@@ -24,16 +24,22 @@ pub const MASTER_KEY_LEN: usize = 32;
 /// Тип мастер-ключа.
 pub type MasterKey = core_shared::ram_protect::EncryptedMemoryBuffer<MASTER_KEY_LEN>;
 
+/// Запечатать байты мастер-ключа в защищённый буфер. Массив вызывающего
+/// зачищается. Если ОС не смогла зашифровать буфер в памяти (ключ остался
+/// открытым текстом), это попадает в журнал: молча терять защиту нельзя.
+pub fn seal_master_key(key: &mut [u8; MASTER_KEY_LEN]) -> MasterKey {
+    let mk = MasterKey::new(key);
+    if !mk.is_protected() {
+        log::warn!("memory: CryptProtectMemory unavailable, master key is kept unencrypted in RAM");
+    }
+    mk
+}
+
 /// Сгенерировать новый мастер-ключ.
 pub fn generate_master_key() -> MasterKey {
-    use zeroize::Zeroize;
-    let mut k = [0u8; MASTER_KEY_LEN];
-    rng::fill(&mut k);
-    let mk = MasterKey::new(k);
-    // `[u8; N]` — Copy, поэтому MasterKey::new получает КОПИЮ, а
-    // локальный `k` остаётся на стеке. Затираем его явно.
-    k.zeroize();
-    mk
+    let mut k = zeroize::Zeroizing::new([0u8; MASTER_KEY_LEN]);
+    rng::fill(&mut *k);
+    seal_master_key(&mut k)
 }
 
 /// Длина salt для Argon2id (хранится с wrapped_blob).
@@ -87,22 +93,17 @@ pub fn unwrap_master_with_pin_params(
     pin: &[u8],
     params: kdf::Argon2Params,
 ) -> Result<MasterKey> {
-    use zeroize::Zeroize;
     let kek = kdf::argon2id_derive_key_with(pin, &wrapped.salt, params)?;
-    let mut plaintext = aead::decrypt(&kek, &wrapped.blob, b"vaultisor:master-wrap")
+    let plaintext = aead::decrypt(&kek, &wrapped.blob, b"vaultisor:master-wrap")
         .map_err(|_| crate::error::VaultError::InvalidPin)?;
     if plaintext.len() != MASTER_KEY_LEN {
-        plaintext.zeroize();
         return Err(crate::error::VaultError::Crypto(
             "unwrapped key has wrong length".into(),
         ));
     }
-    let mut key_buf = [0u8; MASTER_KEY_LEN];
+    let mut key_buf = zeroize::Zeroizing::new([0u8; MASTER_KEY_LEN]);
     key_buf.copy_from_slice(&plaintext);
-    plaintext.zeroize();
-    let mk = MasterKey::new(key_buf);
-    key_buf.zeroize(); // затираем стековую копию
-    Ok(mk)
+    Ok(seal_master_key(&mut key_buf))
 }
 
 /// Обернуть master-key (v2) с явными параметрами Argon2id.
@@ -126,22 +127,17 @@ pub fn unwrap_master_with_pin_v2_params(
     device_secret: &[u8; 32],
     params: kdf::Argon2Params,
 ) -> Result<MasterKey> {
-    use zeroize::Zeroize;
     let kek = kdf::argon2id_derive_key_v2_with(pin, device_secret, &wrapped.salt, params)?;
-    let mut plaintext = aead::decrypt(&kek, &wrapped.blob, b"vaultisor:master-wrap:v2")
+    let plaintext = aead::decrypt(&kek, &wrapped.blob, b"vaultisor:master-wrap:v2")
         .map_err(|_| crate::error::VaultError::InvalidPin)?;
     if plaintext.len() != MASTER_KEY_LEN {
-        plaintext.zeroize();
         return Err(crate::error::VaultError::Crypto(
             "unwrapped key has wrong length".into(),
         ));
     }
-    let mut key_buf = [0u8; MASTER_KEY_LEN];
+    let mut key_buf = zeroize::Zeroizing::new([0u8; MASTER_KEY_LEN]);
     key_buf.copy_from_slice(&plaintext);
-    plaintext.zeroize();
-    let mk = MasterKey::new(key_buf);
-    key_buf.zeroize(); // затираем стековую копию
-    Ok(mk)
+    Ok(seal_master_key(&mut key_buf))
 }
 
 #[cfg(test)]
@@ -157,6 +153,15 @@ mod tests {
             t_cost: 1,
             p_cost: 1,
         }
+    }
+
+    /// `seal_master_key` зачищает массив вызывающего и сохраняет значение.
+    #[test]
+    fn seal_wipes_the_callers_array_and_keeps_the_value() {
+        let mut raw = [0x42u8; MASTER_KEY_LEN];
+        let mk = seal_master_key(&mut raw);
+        assert_eq!(raw, [0u8; MASTER_KEY_LEN]);
+        mk.with_decrypted(|k| assert_eq!(k, &[0x42u8; MASTER_KEY_LEN]));
     }
 
     #[test]

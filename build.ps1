@@ -6,7 +6,7 @@
 #   1) Verify Node.js, Rust, Cargo are installed.
 #   2) Install npm dependencies (unless -SkipDeps).
 #   3) Build frontend (Vite -> dist/).
-#   4) Build Tauri release (-> src-tauri/target/release/vaultisor.exe).
+#   4) Build Tauri release (-> target\release\vaultisor.exe).
 #   5) Copy the result to .\release\Vaultisor-<version>.exe.
 #
 # Usage:
@@ -62,7 +62,9 @@ Assert-Tool -Name "nasm"  -Hint "Install NASM from https://www.nasm.us/ and add 
 # ----- Optional clean -----
 if ($Clean) {
     Write-Step "Cleaning build artifacts"
-    foreach ($p in @("dist", "src-tauri\target", "node_modules\.vite", "release")) {
+    # release\ is deliberately NOT cleaned: it may hold a portable vault
+    # folder (release\vault) that belongs to the user. Only build output goes.
+    foreach ($p in @("dist", "target", "node_modules\.vite")) {
         if (Test-Path $p) {
             Write-Host "  rm $p"
             Remove-Item -Recurse -Force $p

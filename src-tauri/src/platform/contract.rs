@@ -76,6 +76,24 @@ mod tests {
         hello_lifecycle(&super::super::fake::FakePlatform::default());
     }
 
+    /// Проверка Hello сверяет публичный ключ: чужой ключ — отказ, а не
+    /// молчаливый успех. У разных credential'ов ключи разные.
+    #[test]
+    fn fake_hello_verify_rejects_a_wrong_public_key() {
+        let platform = super::super::fake::FakePlatform::default();
+        let first = platform.hello_create(&[1; 16]).unwrap();
+        let second = platform.hello_create(&[2; 16]).unwrap();
+        assert_ne!(first.public_key, second.public_key);
+
+        platform
+            .hello_verify(&first.name, &first.public_key)
+            .expect("верный ключ");
+        assert!(platform
+            .hello_verify(&first.name, &second.public_key)
+            .is_err());
+        assert!(platform.hello_verify(&first.name, &[4; 65]).is_err());
+    }
+
     #[cfg(windows)]
     #[test]
     #[ignore = "requires a provisioned Windows TPM 2.0"]

@@ -92,12 +92,15 @@ pub fn combine_shares(shares: &[Share], threshold: u8) -> Result<zeroize::Zeroiz
     }
 
     let mut out = zeroize::Zeroizing::new(vec![0u8; len]);
+    // Точки содержат байты долей, поэтому затираются через `Zeroizing`:
+    // ручной цикл присваивания нулей перед освобождением компилятор вправе
+    // выбросить как мёртвую запись, `zeroize` — нет.
+    let mut points: zeroize::Zeroizing<Vec<(u8, u8)>> =
+        zeroize::Zeroizing::new(Vec::with_capacity(shares.len()));
     for byte_idx in 0..len {
-        let mut points: Vec<(u8, u8)> = shares.iter().map(|s| (s.x, s.y[byte_idx])).collect();
+        points.clear();
+        points.extend(shares.iter().map(|s| (s.x, s.y[byte_idx])));
         out[byte_idx] = lagrange_interpolate_at_zero(&points);
-        for p in points.iter_mut() {
-            *p = (0, 0);
-        }
     }
     Ok(out)
 }
@@ -133,6 +136,14 @@ fn gf_add(a: u8, b: u8) -> u8 {
     a ^ b
 }
 
+/// Умножение в GF(256) через таблицы логарифмов и экспонент.
+///
+/// Обращения к таблицам зависят от значений операндов, то есть не выполняются
+/// за постоянное время. Для этого проекта это приемлемо: инструмент локальный
+/// и офлайновый, удалённого канала измерения времени у атакующего нет, а доли
+/// по 32 байта собираются один раз за восстановление (по человеческому
+/// действию), так что статистики для локального микроархитектурного канала
+/// не набирается.
 #[inline]
 fn gf_mul(a: u8, b: u8) -> u8 {
     if a == 0 || b == 0 {
