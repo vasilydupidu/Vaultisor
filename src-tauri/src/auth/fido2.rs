@@ -91,6 +91,59 @@ pub fn is_fido2_supported() -> bool {
     false
 }
 
+/// Родитель системного диалога WebAuthn. `0` означает «окно приложения не
+/// определилось» — тогда диалог привязывается к окну переднего плана, как
+/// раньше, а не отказывает.
+#[cfg(target_os = "windows")]
+fn dialog_parent(parent_hwnd: isize) -> *mut std::ffi::c_void {
+    if parent_hwnd != 0 {
+        parent_hwnd as *mut std::ffi::c_void
+    } else {
+        unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 }
+    }
+}
+
+/// Затереть буфер, выделенный `webauthn.dll`.
+///
+/// # Safety
+/// `ptr` либо null, либо указывает на `len` доступных для записи байт,
+/// выделенных ОС и ещё не освобождённых; других ссылок на них нет.
+#[cfg(target_os = "windows")]
+unsafe fn wipe_os_buffer(ptr: *mut u8, len: u32) {
+    use zeroize::Zeroize;
+    if !ptr.is_null() && len > 0 {
+        // `zeroize` пишет через volatile, поэтому компилятор не выбросит
+        // запись как мёртвую перед освобождением буфера самой ОС.
+        std::slice::from_raw_parts_mut(ptr, len as usize).zeroize();
+    }
+}
+
+/// Забрать PRF-выход из структуры ответа Windows и затереть оба буфера ОС.
+///
+/// Буферы `pbFirst`/`pbSecond` принадлежат `webauthn.dll`, а
+/// `WebAuthNFreeAssertion` освобождает их без обнуления: без явной зачистки
+/// hmac-secret оставался бы в освобождённой куче процесса. Затираются оба
+/// буфера и при слишком коротком первом выходе.
+///
+/// # Safety
+/// `secret.pbFirst`/`pbSecond` согласованы с `cbFirst`/`cbSecond` (null либо
+/// валидный изменяемый буфер ОС до вызова `WebAuthNFreeAssertion`).
+#[cfg(target_os = "windows")]
+unsafe fn take_hmac_secret(
+    secret: &crate::windows_api::webauthn_ffi::WEBAUTHN_HMAC_SECRET_SALT,
+) -> Option<Zeroizing<Vec<u8>>> {
+    let mut out = None;
+    if secret.cbFirst >= 32 && !secret.pbFirst.is_null() {
+        let prf_bytes = std::slice::from_raw_parts(secret.pbFirst, 32);
+        let mut copy = Zeroizing::new(vec![0u8; 32]);
+        copy.copy_from_slice(prf_bytes);
+        out = Some(copy);
+    }
+    wipe_os_buffer(secret.pbFirst, secret.cbFirst);
+    wipe_os_buffer(secret.pbSecond, secret.cbSecond);
+    out
+}
+
 /// Зарегистрировать FIDO2-ключ через Windows Security диалог.
 ///
 /// `require_pin`:
@@ -103,6 +156,7 @@ pub fn register_fido2_key_prompt(
     key_name: &str,
     require_pin: bool,
     client_data_json: &[u8],
+    parent_hwnd: isize,
 ) -> Result<Fido2Registration> {
     use crate::windows_api::webauthn_ffi::*;
     use std::ptr;
@@ -187,7 +241,7 @@ pub fn register_fido2_key_prompt(
             require_pin
         );
 
-        let hwnd = windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0;
+        let hwnd = dialog_parent(parent_hwnd);
         let mut p_attestation: *mut WEBAUTHN_CREDENTIAL_ATTESTATION_V5 = ptr::null_mut();
 
         // V6 options с bEnablePrf = TRUE
@@ -352,10 +406,12 @@ pub fn register_fido2_key_prompt(
 ///
 /// При API >= 6 запрашивает hmac-secret с фиксированной солью.
 /// Аутентификатор возвращает 32-байтный аппаратно-привязанный секрет.
+#[cfg(target_os = "windows")]
 pub fn assert_fido2_key_prompt(
     registered_credentials: &[Vec<u8>],
     require_pin: bool,
     client_data_json: &[u8],
+    parent_hwnd: isize,
 ) -> Result<Fido2AssertionResult> {
     use crate::windows_api::webauthn_ffi::*;
     use std::ptr;
@@ -419,7 +475,7 @@ pub fn assert_fido2_key_prompt(
             WEBAUTHN_USER_VERIFICATION_REQUIREMENT_PREFERRED
         };
 
-        let hwnd = windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0;
+        let hwnd = dialog_parent(parent_hwnd);
         let mut p_assertion: *mut WEBAUTHN_ASSERTION_V3 = ptr::null_mut();
 
         // V6 options с PRF salt
@@ -565,23 +621,13 @@ pub fn assert_fido2_key_prompt(
             };
             if !p_hmac_secret.is_null() {
                 let hmac_secret = &*p_hmac_secret;
-                if hmac_secret.cbFirst >= 32 && !hmac_secret.pbFirst.is_null() {
-                    let prf_bytes = std::slice::from_raw_parts(
-                        hmac_secret.pbFirst,
-                        hmac_secret.cbFirst as usize,
-                    );
-                    let mut secret = vec![0u8; 32];
-                    secret.copy_from_slice(&prf_bytes[..32]);
-                    log::info!(
-                        "assert: PRF output received ({} bytes)",
-                        hmac_secret.cbFirst
-                    );
-                    prf_output = Some(Zeroizing::new(secret));
+                let first_len = hmac_secret.cbFirst;
+                // Буферы ОС затираются здесь же, до WebAuthNFreeAssertion.
+                prf_output = take_hmac_secret(hmac_secret);
+                if prf_output.is_some() {
+                    log::info!("assert: PRF output received ({first_len} bytes)");
                 } else {
-                    log::warn!(
-                        "assert: pHmacSecret present but cbFirst={}",
-                        hmac_secret.cbFirst
-                    );
+                    log::warn!("assert: pHmacSecret present but cbFirst={first_len}");
                 }
             } else {
                 log::info!("assert: no PRF output (dwVersion={})", ass.dwVersion);
@@ -608,6 +654,7 @@ pub fn register_fido2_key_prompt(
     _key_name: &str,
     _require_pin: bool,
     _client_data_json: &[u8],
+    _parent_hwnd: isize,
 ) -> Result<Fido2Registration> {
     Err(VaultError::FidoFailed(
         "FIDO2 поддерживается только на Windows 10/11".into(),
@@ -619,10 +666,65 @@ pub fn assert_fido2_key_prompt(
     _registered_credentials: &[Vec<u8>],
     _require_pin: bool,
     _client_data_json: &[u8],
+    _parent_hwnd: isize,
 ) -> Result<Fido2AssertionResult> {
     Err(VaultError::FidoFailed(
         "FIDO2 поддерживается только на Windows 10/11".into(),
     ))
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod prf_wipe_tests {
+    use super::*;
+    use crate::windows_api::webauthn_ffi::WEBAUTHN_HMAC_SECRET_SALT;
+
+    /// Буфер ОС после чтения PRF-выхода обнулён целиком, а копия сохранена.
+    #[test]
+    fn take_hmac_secret_copies_and_wipes_both_os_buffers() {
+        let mut first = [0xA5u8; 32];
+        let mut second = [0x5Au8; 32];
+        let salt = WEBAUTHN_HMAC_SECRET_SALT {
+            cbFirst: 32,
+            pbFirst: first.as_mut_ptr(),
+            cbSecond: 32,
+            pbSecond: second.as_mut_ptr(),
+        };
+        let out = unsafe { take_hmac_secret(&salt) }.expect("PRF-выход");
+        assert_eq!(out.as_slice(), &[0xA5u8; 32]);
+        assert_eq!(first, [0u8; 32], "первый буфер ОС не затёрт");
+        assert_eq!(second, [0u8; 32], "второй буфер ОС не затёрт");
+    }
+
+    /// Слишком короткий выход не принимается, но и не остаётся в памяти.
+    #[test]
+    fn short_secret_is_rejected_and_still_wiped() {
+        let mut first = [0xC3u8; 16];
+        let salt = WEBAUTHN_HMAC_SECRET_SALT {
+            cbFirst: 16,
+            pbFirst: first.as_mut_ptr(),
+            cbSecond: 0,
+            pbSecond: std::ptr::null_mut(),
+        };
+        assert!(unsafe { take_hmac_secret(&salt) }.is_none());
+        assert_eq!(first, [0u8; 16]);
+    }
+
+    /// Нулевые указатели допустимы: нечего ни читать, ни затирать.
+    #[test]
+    fn null_buffers_are_tolerated() {
+        let salt = WEBAUTHN_HMAC_SECRET_SALT {
+            cbFirst: 32,
+            pbFirst: std::ptr::null_mut(),
+            cbSecond: 0,
+            pbSecond: std::ptr::null_mut(),
+        };
+        assert!(unsafe { take_hmac_secret(&salt) }.is_none());
+    }
+
+    #[test]
+    fn dialog_parent_prefers_the_app_window() {
+        assert_eq!(dialog_parent(0x1234) as isize, 0x1234);
+    }
 }
 
 #[cfg(test)]

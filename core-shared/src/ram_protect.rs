@@ -25,29 +25,48 @@ pub struct EncryptedMemoryBuffer<const N: usize> {
 
 impl<const N: usize> EncryptedMemoryBuffer<N> {
     /// Создать защищенный буфер из переданных открытых байтов.
-    /// Исходный plaintext зачищается.
-    pub fn new(mut plaintext: [u8; N]) -> Self {
+    ///
+    /// Массив передаётся по изменяемой ссылке, а не по значению: `[u8; N]` —
+    /// `Copy`, и передача по значению оставляла бы на стеке вызывающего
+    /// незатертую копию. Здесь байты копируются в буфер, а массив вызывающего
+    /// зачищается.
+    ///
+    /// Если `CryptProtectMemory` вернул ошибку (или платформа не Windows),
+    /// буфер продолжает хранить ключ открытым текстом. Это не скрывается:
+    /// состояние видно через [`Self::is_protected`], и вызывающий код обязан
+    /// его проверить и сообщить.
+    pub fn new(plaintext: &mut [u8; N]) -> Self {
         assert_eq!(
             N % 16,
             0,
             "Buffer size must be a multiple of 16 bytes for CryptProtectMemory"
         );
-        let mut data = plaintext;
+        #[cfg_attr(not(windows), allow(unused_mut))]
+        let mut buf = Self {
+            data: *plaintext,
+            protected: false,
+        };
         plaintext.zeroize();
 
         #[cfg(windows)]
-        let protected = unsafe {
-            CryptProtectMemory(
-                data.as_mut_ptr() as *mut _,
-                N as u32,
-                CRYPTPROTECTMEMORY_SAME_PROCESS,
-            )
-            .is_ok()
-        };
-        #[cfg(not(windows))]
-        let protected = false;
+        {
+            buf.protected = unsafe {
+                CryptProtectMemory(
+                    buf.data.as_mut_ptr() as *mut _,
+                    N as u32,
+                    CRYPTPROTECTMEMORY_SAME_PROCESS,
+                )
+                .is_ok()
+            };
+        }
 
-        Self { data, protected }
+        buf
+    }
+
+    /// Зашифрован ли буфер средствами ОС. `false` — ключ лежит в памяти
+    /// открытым текстом (ошибка `CryptProtectMemory` либо не-Windows).
+    pub fn is_protected(&self) -> bool {
+        self.protected
     }
 
     /// Выполнить замыкание с временным расшифрованным значением в RAM.
@@ -101,10 +120,39 @@ mod tests {
 
     #[test]
     fn ram_protect_roundtrip() {
-        let key = [0xAAu8; 32];
-        let protected = EncryptedMemoryBuffer::new(key);
+        let mut key = [0xAAu8; 32];
+        let protected = EncryptedMemoryBuffer::new(&mut key);
         protected.with_decrypted(|dec| {
             assert_eq!(dec, &[0xAAu8; 32]);
         });
+    }
+
+    /// Массив вызывающего зачищается: незатертой копии ключа на его стеке нет.
+    #[test]
+    fn constructor_wipes_the_callers_array() {
+        let mut key = [0x5Cu8; 32];
+        let _buf = EncryptedMemoryBuffer::new(&mut key);
+        assert_eq!(key, [0u8; 32]);
+    }
+
+    /// На Windows защита должна реально включаться, и в этом случае в буфере
+    /// лежит не открытый текст.
+    #[cfg(windows)]
+    #[test]
+    fn windows_buffer_is_protected_and_not_plaintext() {
+        let mut key = [0x77u8; 32];
+        let buf = EncryptedMemoryBuffer::new(&mut key);
+        assert!(buf.is_protected());
+        assert_ne!(buf.data, [0x77u8; 32], "в буфере остался открытый текст");
+        buf.with_decrypted(|dec| assert_eq!(dec, &[0x77u8; 32]));
+    }
+
+    /// Без защиты ОС флаг честно сообщает об открытом хранении.
+    #[cfg(not(windows))]
+    #[test]
+    fn non_windows_buffer_reports_unprotected() {
+        let mut key = [0x77u8; 32];
+        let buf = EncryptedMemoryBuffer::new(&mut key);
+        assert!(!buf.is_protected());
     }
 }

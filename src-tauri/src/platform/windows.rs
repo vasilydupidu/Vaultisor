@@ -24,6 +24,18 @@ impl WindowsPlatform {
         Self { app: None }
     }
 
+    /// Родитель диалога FIDO2: окно приложения. Не определилось — `0`, и
+    /// диалог откроется поверх окна переднего плана, а не завершится отказом.
+    fn dialog_parent_window(&self) -> isize {
+        match self.parent_window() {
+            Ok(hwnd) => hwnd,
+            Err(e) => {
+                log::warn!("fido: app window unavailable, using foreground window: {e}");
+                0
+            }
+        }
+    }
+
     fn parent_window(&self) -> Result<isize> {
         match &self.app {
             Some(app) => hello::main_window_hwnd(app),
@@ -110,7 +122,12 @@ impl Platform for WindowsPlatform {
         require_pin: bool,
         client_data_json: &[u8],
     ) -> Result<Fido2Registration> {
-        fido2::register_fido2_key_prompt(name, require_pin, client_data_json)
+        fido2::register_fido2_key_prompt(
+            name,
+            require_pin,
+            client_data_json,
+            self.dialog_parent_window(),
+        )
     }
 
     fn fido_assert(
@@ -119,7 +136,12 @@ impl Platform for WindowsPlatform {
         require_pin: bool,
         client_data_json: &[u8],
     ) -> Result<Fido2AssertionResult> {
-        fido2::assert_fido2_key_prompt(credentials, require_pin, client_data_json)
+        fido2::assert_fido2_key_prompt(
+            credentials,
+            require_pin,
+            client_data_json,
+            self.dialog_parent_window(),
+        )
     }
 
     fn now_unix(&self) -> i64 {

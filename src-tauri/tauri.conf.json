@@ -53,7 +53,7 @@
     "publisher": "Vaultisor",
     "category": "DeveloperTool",
     "shortDescription": "Локальное защищённое хранилище секретов",
-    "longDescription": "Vaultisor — портативное локальное хранилище API-ключей, токенов и других технических секретов. Шифрование AES-256-GCM, привязка к устройству через DPAPI, восстановление через Shamir 2-of-3.",
+    "longDescription": "Vaultisor — портативное локальное хранилище API-ключей, токенов и других технических секретов. Шифрование AES-256-GCM, привязка к устройству через DPAPI, восстановление по двум частям (B и C) через Shamir.",
     "copyright": "Copyright © 2026 Vaultisor",
     "licenseFile": null,
     "icon": [

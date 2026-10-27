@@ -146,6 +146,12 @@ pub fn verify_registration(
 }
 
 /// Assertion: проверить authenticatorData и подпись сохранённым ключом.
+///
+/// `signCount` намеренно не проверяется. Клон токена не получит hmac-secret
+/// оригинала, поэтому без самого устройства мастер-ключ всё равно не
+/// открыть, а счётчик у многих аутентификаторов всегда нулевой или не
+/// синхронизирован между интерфейсами: его проверка давала бы ложные
+/// отказы и могла бы заблокировать владельца без выигрыша в защите.
 pub fn verify_assertion(
     public_key: &[u8],
     auth_data: &[u8],
@@ -177,8 +183,16 @@ fn parse_cose_p256(cbor: &[u8]) -> Result<Vec<u8>> {
     let entries = read_len(cbor, &mut cursor, 5)?;
     let (mut kty, mut alg, mut curve) = (None, None, None);
     let (mut x, mut y) = (None, None);
+    // Ключ карты, встреченный дважды, — неоднозначный COSE: молча брать
+    // последнее значение нельзя, разные разборщики прочли бы разные ключи.
+    let mut seen = Vec::with_capacity(usize::min(entries, 8));
     for _ in 0..entries {
-        match read_int(cbor, &mut cursor)? {
+        let label = read_int(cbor, &mut cursor)?;
+        if seen.contains(&label) {
+            return Err(rp_error("COSE key has duplicate labels"));
+        }
+        seen.push(label);
+        match label {
             1 => kty = Some(read_int(cbor, &mut cursor)?),
             3 => alg = Some(read_int(cbor, &mut cursor)?),
             -1 => curve = Some(read_int(cbor, &mut cursor)?),
@@ -444,6 +458,48 @@ mod tests {
         // Без UV при требовании UV — отказ.
         let no_uv = authenticator.registration(false);
         assert!(verify_registration(&no_uv, &authenticator.credential_id, true).is_err());
+    }
+
+    /// Валидная карта COSE ES256 с произвольным числом пар `(метка, значение)`.
+    fn cose_map(entries: &[&[u8]]) -> Vec<u8> {
+        let mut cbor = vec![0xa0 | entries.len() as u8];
+        for entry in entries {
+            cbor.extend_from_slice(entry);
+        }
+        cbor
+    }
+
+    const KTY: &[u8] = &[0x01, 0x02];
+    const ALG: &[u8] = &[0x03, 0x26];
+    const CRV: &[u8] = &[0x20, 0x01];
+
+    fn coord(label: u8) -> Vec<u8> {
+        let mut entry = vec![label, 0x58, 0x20];
+        entry.extend_from_slice(&[0x11; 32]);
+        entry
+    }
+
+    #[test]
+    fn a_valid_cose_map_is_accepted() {
+        let (x, y) = (coord(0x21), coord(0x22));
+        let key = parse_cose_p256(&cose_map(&[KTY, ALG, CRV, &x, &y])).unwrap();
+        assert_eq!(key.len(), 65);
+        assert_eq!(key[0], 4);
+    }
+
+    /// Повтор метки раньше молча затирал первое значение последним.
+    #[test]
+    fn duplicate_cose_labels_are_rejected() {
+        let (x, y) = (coord(0x21), coord(0x22));
+        // Метка kty (1) дважды: сначала верный тип, затем подмена.
+        assert!(parse_cose_p256(&cose_map(&[KTY, KTY, ALG, CRV, &x, &y])).is_err());
+        // Координата x дважды.
+        assert!(parse_cose_p256(&cose_map(&[KTY, ALG, CRV, &x, &x, &y])).is_err());
+        // Повтор метки, которую разбор пропускает (4 — key_ops).
+        let ops: &[u8] = &[0x04, 0x00];
+        assert!(parse_cose_p256(&cose_map(&[KTY, ALG, CRV, &x, &y, ops, ops])).is_err());
+        // Та же карта без повторов принимается.
+        assert!(parse_cose_p256(&cose_map(&[KTY, ALG, CRV, &x, &y, ops])).is_ok());
     }
 
     #[test]

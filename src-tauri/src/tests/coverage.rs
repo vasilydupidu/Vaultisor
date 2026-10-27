@@ -643,17 +643,35 @@ async fn recovery_acknowledge_is_atomic() {
 
 // ------------------------------------------------------------ backup config
 
-/// Следы оборванной записи в каталоге хранилища.
+/// Следы оборванной записи в каталоге хранилища: файлы с префиксом, под
+/// которым пишет атомарная запись.
 fn temporaries(env: &Env) -> Vec<String> {
     std::fs::read_dir(&env.root)
         .map(|entries| {
             entries
                 .flatten()
                 .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                .filter(|name| name.starts_with(".tmp"))
+                .filter(|name| name.starts_with(crate::storage::fsio::TEMP_PREFIX))
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Негативный контроль: проверка остатков действительно видит оставленный
+/// временный файл и не принимает за него посторонние имена.
+#[test]
+fn temporaries_check_sees_a_leftover_atomic_write() {
+    let env = Env::new();
+    std::fs::create_dir_all(&env.root).expect("vault dir");
+    assert!(temporaries(&env).is_empty());
+
+    std::fs::write(env.root.join("meta.db"), b"x").expect("regular file");
+    std::fs::write(env.root.join(".tmp-not-ours"), b"x").expect("foreign file");
+    assert!(temporaries(&env).is_empty(), "посторонние имена не остатки");
+
+    let leftover = format!("{}abc123", crate::storage::fsio::TEMP_PREFIX);
+    std::fs::write(env.root.join(&leftover), b"x").expect("leftover");
+    assert_eq!(temporaries(&env), vec![leftover]);
 }
 
 /// Конфиг резервных копий наблюдается поведением: OLD — каталог не выбран,

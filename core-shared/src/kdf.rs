@@ -4,7 +4,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use once_cell::sync::Lazy;
 use sha2::Sha256;
 use std::sync::Mutex;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use crate::error::{CoreError, Result};
 
@@ -131,12 +131,10 @@ pub fn argon2id_derive_key_v2_with(
     salt: &[u8],
     params: Argon2Params,
 ) -> Result<Zeroizing<[u8; 32]>> {
-    let mut combined = Vec::with_capacity(pin.len() + 32);
+    let mut combined = Zeroizing::new(Vec::with_capacity(pin.len() + 32));
     combined.extend_from_slice(pin);
     combined.extend_from_slice(device_secret);
-    let result = argon2id_derive_key_with(&combined, salt, params);
-    combined.zeroize();
-    result
+    argon2id_derive_key_with(&combined, salt, params)
 }
 
 #[cfg(test)]
