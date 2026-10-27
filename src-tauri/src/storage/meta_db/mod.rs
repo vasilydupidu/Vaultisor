@@ -93,7 +93,7 @@ impl MetaDb {
     pub fn backup_to(&self, destination: &Path) -> Result<()> {
         let _security = SECURITY_WRITE_LOCK.lock();
         self.with_conn(|source| {
-            source.backup(rusqlite::DatabaseName::Main, destination, None)?;
+            source.backup(rusqlite::MAIN_DB, destination, None)?;
             Ok(())
         })
     }

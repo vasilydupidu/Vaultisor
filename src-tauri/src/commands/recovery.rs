@@ -182,7 +182,7 @@ fn validate_user_path(path: &std::path::Path) -> Result<&std::path::Path> {
 pub struct RestoreInput {
     /// Обе части, B и C, в формате "X|hex".
     pub shares_hex: Vec<String>,
-    pub new_pin: String,
+    pub new_pin: crate::auth::pin::Secret,
 }
 
 #[derive(Debug, Serialize)]

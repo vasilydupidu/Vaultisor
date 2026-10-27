@@ -132,7 +132,7 @@ pub(crate) async fn unlock_with_fido2(state: &AppState) -> Result<()> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChangePinInput {
-    pub new_pin: String,
+    pub new_pin: crate::auth::pin::Secret,
     /// Один на намерение пользователя: повтор после потерянного ответа
     /// распознаётся и не требует подтверждения уже сменённым PIN.
     pub request_id: String,

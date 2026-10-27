@@ -537,4 +537,32 @@ mod tests {
         assert!(!records_key_opens(&path, &key_b));
         assert!(records_key_opens(&path, &key_a));
     }
+
+    /// Встроенные SQLCipher и SQLite не старее зафиксированных версий: сборка
+    /// не должна тихо откатиться на устаревшую библиотеку с известными
+    /// уязвимостями.
+    #[test]
+    fn bundled_sqlcipher_and_sqlite_are_current() {
+        let connection = rusqlite::Connection::open_in_memory().unwrap();
+        let cipher: String = connection
+            .query_row("PRAGMA cipher_version", [], |row| row.get(0))
+            .unwrap();
+        let version = |text: &str| -> Vec<u32> {
+            text.split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .split('.')
+                .filter_map(|part| part.parse().ok())
+                .collect()
+        };
+        assert!(
+            version(&cipher) >= vec![4, 10, 0],
+            "SQLCipher устарел: {cipher}"
+        );
+        assert!(
+            version(rusqlite::version()) >= vec![3, 50, 0],
+            "SQLite устарел: {}",
+            rusqlite::version()
+        );
+    }
 }

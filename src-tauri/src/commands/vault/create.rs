@@ -30,7 +30,7 @@ use crate::commands::vault::helpers::open_session;
 #[serde(deny_unknown_fields)]
 pub struct VaultCreateInput {
     /// PIN (с TPM 2.0) либо мастер-пароль (без TPM).
-    pub pin: String,
+    pub pin: crate::auth::pin::Secret,
     /// Сразу включить Windows Hello как второй фактор.
     pub use_windows_hello: bool,
     pub autolock_seconds: Option<u32>,

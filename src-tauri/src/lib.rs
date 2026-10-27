@@ -133,6 +133,11 @@ pub fn run() {
             #[cfg(windows)]
             crate::windows_api::session::spawn_session_lock_watcher(app.handle().clone());
 
+            // Автоблокировка по простою не зависит от интерфейса: без этого
+            // таймера срок проверяется лишь при очередной команде, и зависшее
+            // окно держало бы мастер-ключ в памяти бессрочно.
+            spawn_autolock_timer(app.handle().clone());
+
             // Показываем главное окно после initial setup.
             // (visible: false в tauri.conf.json → исключаем "белый flash").
             if let Some(window) = app.get_webview_window("main") {
@@ -235,4 +240,21 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("Vaultisor: фатальная ошибка инициализации Tauri");
+}
+
+/// Раз в несколько секунд проверяет срок простоя и закрывает сессию сам.
+fn spawn_autolock_timer(app: tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    std::thread::Builder::new()
+        .name("vaultisor-autolock".into())
+        .spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            let Some(state) = app.try_state::<AppState>() else {
+                continue;
+            };
+            if state.check_autolock() {
+                let _ = app.emit("vault://session-locked", "autolock");
+            }
+        })
+        .ok();
 }

@@ -49,9 +49,9 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
   отдельными страницами — обнаруживаются при входе.
 - **Буфер обмена.** Секрет не попадает в историю буфера и облачный буфер
   Windows, очищается по таймеру (до 2 минут) и при блокировке.
-- **Автоблокировка** по простою (до часа), при блокировке сеанса Windows
-  (Win+L, смена пользователя). При выходе из сна хранилище блокируется вместе
-  с сеансом, если Windows требует входа после сна.
+- **Автоблокировка** по простою (до часа; таймер работает в самом backend и не
+  зависит от окна), при блокировке сеанса Windows (Win+L, смена пользователя)
+  и при уходе в сон.
 
 ### 🗄️ Хранение данных
 
@@ -199,9 +199,9 @@ TPM 2.0 (without a TPM, a master password of 15+ characters is used).
   copies — whole files or individual pages — are detected at sign-in.
 - **Clipboard.** Secrets stay out of Windows clipboard history and cloud
   clipboard, and are cleared on a timer (up to 2 minutes) and on lock.
-- **Auto-lock** on inactivity (up to an hour) and on Windows session lock
-  (Win+L, user switch). Waking from sleep locks the vault together with the
-  session when Windows requires sign-in after sleep.
+- **Auto-lock** on inactivity (up to an hour; the timer runs in the backend
+  itself and does not depend on the window), on Windows session lock (Win+L,
+  user switch) and when the machine goes to sleep.
 
 ### 🗄️ Data
 

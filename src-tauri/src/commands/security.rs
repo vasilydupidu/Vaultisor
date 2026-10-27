@@ -89,7 +89,7 @@ impl Authorization {
 #[serde(deny_unknown_fields)]
 pub struct AuthorizeInput {
     pub action: SecurityAction,
-    pub pin: String,
+    pub pin: crate::auth::pin::Secret,
 }
 
 #[tauri::command]

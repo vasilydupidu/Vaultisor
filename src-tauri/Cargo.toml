@@ -47,7 +47,8 @@ hex = "0.4"
 base64 = "0.22"
 
 # === Хранилище ===
-rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl", "backup"] }
+unicode-normalization = "0.1"
+rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl", "backup"] }
 # SQLCipher (форк SQLite с прозрачным шифрованием страниц AES-256-CBC + HMAC-SHA512).
 # vendored-openssl собирает OpenSSL из исходников — требует Perl + NASM на хосте.
 # Используется ТОЛЬКО для records-БД (записи + поля); meta-БД хранится открытой,

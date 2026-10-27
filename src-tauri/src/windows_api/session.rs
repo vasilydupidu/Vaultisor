@@ -8,7 +8,8 @@
 // idle-таймера (а при autolock_seconds = 0 не блокировалась никогда).
 //
 // Теперь в отдельном потоке живёт message-only окно, подписанное на
-// уведомления сеанса и питания. При блокировке/отключении/засыпании оно
+// уведомления сеанса (WTSRegisterSessionNotification) и питания
+// (RegisterSuspendResumeNotification). При блокировке/отключении/засыпании оно
 // вызывает AppState::lock() (это же чистит file-grants и буфер обмена) и
 // сообщает интерфейсу событием, чтобы тот сразу ушёл на экран блокировки.
 
@@ -16,13 +17,17 @@ use std::sync::OnceLock;
 
 use tauri::{AppHandle, Emitter, Manager};
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::System::Power::{
+    RegisterSuspendResumeNotification, UnregisterSuspendResumeNotification,
+};
 use windows::Win32::System::RemoteDesktop::{
     WTSRegisterSessionNotification, WTSUnRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
-    TranslateMessage, CW_USEDEFAULT, HWND_MESSAGE, MSG, WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSW,
+    TranslateMessage, CW_USEDEFAULT, DEVICE_NOTIFY_WINDOW_HANDLE, HWND_MESSAGE, MSG,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSW,
 };
 
 use crate::state::AppState;
@@ -151,6 +156,12 @@ fn run_watcher() -> crate::error::Result<()> {
 
         WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION)
             .map_err(|e| VaultError::System(format!("WTSRegisterSessionNotification: {e}")))?;
+        // Сообщения питания (WM_POWERBROADCAST) широковещательно получают
+        // только окна верхнего уровня, а это окно — message-only. Явная
+        // подписка доставляет их и ему.
+        let power = RegisterSuspendResumeNotification(HANDLE(hwnd.0), DEVICE_NOTIFY_WINDOW_HANDLE)
+            .map_err(|e| log::warn!("RegisterSuspendResumeNotification: {e}"))
+            .ok();
         log::info!("session lock watcher registered");
 
         let mut message = MSG::default();
@@ -170,6 +181,9 @@ fn run_watcher() -> crate::error::Result<()> {
             }
         }
 
+        if let Some(power) = power {
+            let _ = UnregisterSuspendResumeNotification(power);
+        }
         let _ = WTSUnRegisterSessionNotification(hwnd);
     }
     Ok(())

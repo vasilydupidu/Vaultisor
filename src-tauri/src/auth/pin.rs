@@ -10,10 +10,56 @@
 //!    стойкость держится на энтропии самого пароля.
 //!
 //! Для всех режимов: не пустой и не из одних пробелов, не один повторяющийся
-//! символ, не меньше `DISTINCT_MIN` разных символов. Юникод не нормализуется:
-//! символы сравниваются как есть.
+//! символ, не меньше `DISTINCT_MIN` разных символов.
+//!
+//! Секрет приводится к Unicode NFC при разборе запроса (`Secret`): одна и та
+//! же фраза, введённая с разной нормализацией (редкие IME, вставка из другого
+//! приложения), даёт один и тот же ключ.
+
+use serde::{Deserialize, Deserializer};
+use unicode_normalization::UnicodeNormalization;
+use zeroize::Zeroizing;
 
 use crate::error::{Result, VaultError};
+
+/// PIN или парольная фраза из запроса: в нормальной форме NFC, без вывода в
+/// `Debug` и с затиранием при освобождении. Нормализация происходит в одном
+/// месте — при разборе IPC-запроса, поэтому забыть о ней в отдельной команде
+/// нельзя: команда получает уже нормализованный секрет.
+#[derive(Clone)]
+pub struct Secret(Zeroizing<String>);
+
+impl Secret {
+    pub fn new(raw: &str) -> Self {
+        Self(Zeroizing::new(raw.nfc().collect()))
+    }
+}
+
+impl std::ops::Deref for Secret {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for Secret {
+    fn from(raw: &str) -> Self {
+        Self::new(raw)
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret(***)")
+    }
+}
+
+impl<'de> Deserialize<'de> for Secret {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        let raw = Zeroizing::new(String::deserialize(deserializer)?);
+        Ok(Self::new(&raw))
+    }
+}
 
 /// Границы цифрового PIN.
 pub const PIN_DIGIT_MIN: usize = 11;
@@ -258,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn distinct_characters_are_compared_as_is_without_normalization() {
+    fn distinct_characters_are_counted_per_char() {
         // «é» в составной и разложенной форме — разные последовательности
         // символов; нормализации нет, поэтому считаются как есть.
         let composed = "\u{00e9}".repeat(15);
@@ -271,5 +317,28 @@ mod tests {
     fn empty_secret_is_rejected_in_both_modes() {
         assert!(tpm("").is_err());
         assert!(no_tpm("").is_err());
+    }
+
+    /// «é» одним символом (NFC) и «e» с комбинирующим акутом (NFD) — один и тот
+    /// же секрет: при разборе запроса оба дают одну форму.
+    #[test]
+    fn secrets_are_compared_in_normal_form() {
+        let composed = "pa\u{e9}ssword-\u{fc}ber-1234";
+        let decomposed = "pae\u{301}ssword-u\u{308}ber-1234";
+        assert_ne!(composed, decomposed);
+        let a: Secret = serde_json::from_value(serde_json::json!(composed)).unwrap();
+        let b: Secret = serde_json::from_value(serde_json::json!(decomposed)).unwrap();
+        assert_eq!(&*a, &*b);
+        assert_eq!(&*a, composed);
+        assert_eq!(format!("{a:?}"), "Secret(***)");
+    }
+
+    /// Длина и разнообразие считаются по символам нормальной формы: буква с
+    /// акцентом остаётся одним символом.
+    #[test]
+    fn length_rules_see_the_normalised_secret() {
+        let decomposed = Secret::new("e\u{301}e\u{301}e\u{301}e\u{301}a1b2c3d4e5f6g7");
+        assert_eq!(decomposed.chars().count(), 18);
+        assert!(no_tpm(&decomposed).is_ok());
     }
 }

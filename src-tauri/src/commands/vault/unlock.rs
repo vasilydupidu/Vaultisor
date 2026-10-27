@@ -16,7 +16,7 @@ use crate::commands::vault::helpers::{
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VaultUnlockInput {
-    pub pin: String,
+    pub pin: crate::auth::pin::Secret,
 }
 
 /// Разблокировка хранилища.
@@ -52,7 +52,7 @@ pub async fn vault_unlock_accept_rollback(
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AcceptRollbackInput {
-    pub pin: String,
+    pub pin: crate::auth::pin::Secret,
     /// Идентификатор снимка из `DATA_ROLLBACK`, который видел владелец.
     pub snapshot: String,
 }
