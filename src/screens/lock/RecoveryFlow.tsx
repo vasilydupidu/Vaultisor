@@ -8,13 +8,62 @@ import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { sanitizeError } from "@/lib/sanitizeError";
 import {
-  PASSPHRASE_MIN,
   PIN_ALNUM_MAX,
-  PIN_ALNUM_MIN,
   PIN_DIGIT_MAX,
-  PIN_DIGIT_MIN,
+  SECRET_MAX,
+  validatePinLocal,
 } from "@/lib/pinRules";
 import { useTranslation } from 'react-i18next';
+
+/** Одна из двух частей: либо прочитана из файла, либо вставлена текстом. */
+interface ShareSlot {
+  file: string | null;
+  text: string;
+}
+
+const EMPTY_SLOT: ShareSlot = { file: null, text: "" };
+
+const slotValue = (slot: ShareSlot): string => slot.file ?? slot.text.trim();
+
+interface ShareSlotFieldProps {
+  title: string;
+  slot: ShareSlot;
+  disabled: boolean;
+  onPickFile: () => void;
+  onChange: (slot: ShareSlot) => void;
+}
+
+function ShareSlotField({ title, slot, disabled, onPickFile, onChange }: ShareSlotFieldProps) {
+  const { t } = useTranslation();
+  const loaded = slotValue(slot) !== "";
+  return (
+    <div className="card-flat p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-medium">{title}</div>
+        {loaded && <div className="text-2xs text-success">{t('recoveryFlow.partLoaded')}</div>}
+      </div>
+      {slot.file !== null ? (
+        <Button variant="secondary" size="sm" fullWidth disabled={disabled} onClick={() => onChange(EMPTY_SLOT)}>
+          {t('recoveryFlow.clearPart')}
+        </Button>
+      ) : (
+        <>
+          <Button variant="secondary" size="sm" fullWidth disabled={disabled} onClick={onPickFile}>
+            {t('recoveryFlow.selectFile')}
+          </Button>
+          <Input
+            aria-label={`${title}: ${t('recoveryFlow.pasteLabel')}`}
+            label={t('recoveryFlow.pasteLabel')}
+            value={slot.text}
+            onChange={(e) => onChange({ file: null, text: e.target.value })}
+            placeholder={t('recoveryFlow.manualPlaceholder')}
+            disabled={disabled}
+          />
+        </>
+      )}
+    </div>
+  );
+}
 
 interface RecoveryFlowProps {
   reason: "forgot-pin" | "device-mismatch";
@@ -29,8 +78,8 @@ export function RecoveryFlow({
   onDone,
   onResetParent,
 }: RecoveryFlowProps) {
-  const [shareUsb, setShareUsb] = useState<string | null>(null);
-  const [shareManual, setShareManual] = useState("");
+  const [shareB, setShareB] = useState<ShareSlot>(EMPTY_SLOT);
+  const [shareC, setShareC] = useState<ShareSlot>(EMPTY_SLOT);
   const [newPin, setNewPin] = useState("");
   const [newPinConfirm, setNewPinConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,23 +87,23 @@ export function RecoveryFlow({
   // Без TPM 2.0 нужен мастер-пароль ≥15 → сразу буквенный режим (цифровой
   // ограничен PIN_DIGIT_MAX символами и не даст набрать 15).
   const [alnum, setAlnum] = useState(!tpmAvailable);
-  const sanitizePin = (v: string) =>
-    alnum ? v.replace(/[^\p{L}\p{N}]/gu, "") : v.replace(/\D/g, "");
-  // Без TPM 2.0 восстановление создаёт хранилище с мастер-паролем (≥15).
-  // Границы берём из общих правил, чтобы UI не расходился с backend.
-  const minPinLen = !tpmAvailable
-    ? PASSPHRASE_MIN
-    : alnum
-      ? PIN_ALNUM_MIN
-      : PIN_DIGIT_MIN;
+  // Мастер-пароль без TPM может содержать любые символы, включая пробелы и
+  // знаки (как в онбординге и на экране входа), поэтому фильтруем только PIN.
+  const sanitizePin = (v: string) => {
+    if (!tpmAvailable) return v;
+    return alnum ? v.replace(/[^\p{L}\p{N}]/gu, "") : v.replace(/\D/g, "");
+  };
+  const maxLen = !tpmAvailable ? SECRET_MAX : alnum ? PIN_ALNUM_MAX : PIN_DIGIT_MAX;
   const toast = useToast();
   const { t } = useTranslation();
 
-  const loadFromUsb = async () => {
+  const bothLoaded = slotValue(shareB) !== "" && slotValue(shareC) !== "";
+
+  const loadFromFile = async (part: "B" | "C", set: (slot: ShareSlot) => void) => {
     try {
       const out = await apiRecoveryLoadFromUsb();
-      setShareUsb(out.share_hex);
-      toast.success(t('recoveryFlow.usbLoaded'));
+      set({ file: out.share_hex, text: "" });
+      toast.success(t('recoveryFlow.fileLoaded', { part }));
     } catch {
       toast.error(t('recoveryFlow.fileReadError'));
     }
@@ -65,27 +114,30 @@ export function RecoveryFlow({
       toast.error(t('recoveryFlow.pinsNotMatch'));
       return;
     }
-    if (newPin.length < minPinLen) {
-      toast.error(
-        !tpmAvailable
-          ? t('recoveryFlow.passMinChars')
-          : alnum
-            ? t('recoveryFlow.alnumMinChars')
-            : t('recoveryFlow.digitMinChars'),
-      );
+    // Те же правила, что при создании хранилища: без TPM — пароль, иначе
+    // цифровой или буквенно-цифровой PIN по выбранному режиму.
+    const formatError = validatePinLocal(
+      newPin,
+      !tpmAvailable ? "passphrase" : alnum ? "alnum" : "digit",
+    );
+    if (formatError) {
+      toast.error(formatError);
       return;
     }
-    const shares: string[] = [];
-    if (shareUsb) shares.push(shareUsb);
-    if (shareManual.trim()) shares.push(shareManual.trim());
+    const b = slotValue(shareB);
+    const c = slotValue(shareC);
     // Нужны обе части, B и C, на любом устройстве: на ПК части нет.
-    if (shares.length < 2) {
+    if (!b || !c) {
       toast.error(t('recoveryFlow.twoSharesRequired'));
+      return;
+    }
+    if (b === c) {
+      toast.error(t('recoveryFlow.sharesSame'));
       return;
     }
     setBusy(true);
     try {
-      await apiRecoveryRestore(shares, newPin);
+      await apiRecoveryRestore([b, c], newPin);
       toast.success(t('recoveryFlow.success'));
       onDone();
       onResetParent();
@@ -106,34 +158,35 @@ export function RecoveryFlow({
           : t('recoveryFlow.forgotPinDesc')}
       </p>
 
-      <div className="space-y-2">
-        <Button variant="secondary" fullWidth onClick={loadFromUsb}>
-          {t('recoveryFlow.selectUsb')}
-        </Button>
-        {shareUsb && <div className="text-2xs text-success">{t('recoveryFlow.partLoaded')}</div>}
-      </div>
-
-      <Input
-        label={t('recoveryFlow.manualLabel')}
-        value={shareManual}
-        onChange={(e) => setShareManual(e.target.value)}
-        placeholder={t('recoveryFlow.manualPlaceholder')}
+      <ShareSlotField
+        title={t('recoveryFlow.partBTitle')}
+        slot={shareB}
+        disabled={busy}
+        onPickFile={() => loadFromFile("B", setShareB)}
+        onChange={setShareB}
+      />
+      <ShareSlotField
+        title={t('recoveryFlow.partCTitle')}
+        slot={shareC}
+        disabled={busy}
+        onPickFile={() => loadFromFile("C", setShareC)}
+        onChange={setShareC}
       />
 
       <div className="space-y-2">
         <Input
-          label={t('recoveryFlow.newPin')}
+          label={tpmAvailable ? t('recoveryFlow.newPin') : t('recoveryFlow.newPass')}
           type="password"
           inputMode={alnum ? "text" : "numeric"}
-          maxLength={alnum ? PIN_ALNUM_MAX : PIN_DIGIT_MAX}
+          maxLength={maxLen}
           value={newPin}
           onChange={(e) => setNewPin(sanitizePin(e.target.value))}
         />
         <Input
-          label={t('recoveryFlow.confirmPin')}
+          label={tpmAvailable ? t('recoveryFlow.confirmPin') : t('recoveryFlow.confirmPass')}
           type="password"
           inputMode={alnum ? "text" : "numeric"}
-          maxLength={alnum ? PIN_ALNUM_MAX : PIN_DIGIT_MAX}
+          maxLength={maxLen}
           value={newPinConfirm}
           onChange={(e) => setNewPinConfirm(sanitizePin(e.target.value))}
         />
@@ -156,7 +209,7 @@ export function RecoveryFlow({
         )}
       </div>
 
-      <Button onClick={restore} fullWidth loading={busy} size="lg">
+      <Button onClick={restore} fullWidth loading={busy} disabled={!bothLoaded} size="lg">
         {t('recoveryFlow.restore')}
       </Button>
     </div>

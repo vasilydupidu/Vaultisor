@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { isRepeatDigits, isSequence, validatePinLocal } from "./pinRules";
+import i18n from "@/lib/i18n";
+import {
+  isRepeatDigits,
+  isSequence,
+  secretMode,
+  validatePinLocal,
+  weakSecretError,
+} from "./pinRules";
 
 describe("isRepeatDigits", () => {
   it("детектит одинаковые цифры", () => {
@@ -51,5 +58,57 @@ describe("validatePinLocal passphrase", () => {
   it("требует ≥15 символов", () => {
     expect(validatePinLocal("short", "passphrase")).not.toBeNull();
     expect(validatePinLocal("a-long-enough-passphrase", "passphrase")).toBeNull();
+  });
+});
+
+describe("weakSecretError", () => {
+  it("отвергает пустой по сути секрет", () => {
+    expect(weakSecretError(" ".repeat(15))).toBe(i18n.t("pinRules.secretBlank"));
+    expect(weakSecretError("\t \n  ")).toBe(i18n.t("pinRules.secretBlank"));
+  });
+  it("отвергает один повторяющийся символ", () => {
+    expect(weakSecretError("a".repeat(20))).toBe(i18n.t("pinRules.secretSingleChar"));
+    expect(weakSecretError("7".repeat(11))).toBe(i18n.t("pinRules.secretSingleChar"));
+  });
+  it("отвергает меньше 6 различных символов", () => {
+    expect(weakSecretError("abababababababab")).toBe(i18n.t("pinRules.secretFewDistinct", { min: 6 }));
+    expect(weakSecretError("abcdeabcdeabcdeabcde")).not.toBeNull(); // 5 различных
+    expect(weakSecretError("abcdefabcdefabcdef")).toBeNull(); // ровно 6
+  });
+  it("считает символы Unicode, а не UTF-16 единицы", () => {
+    // Шесть различных эмодзи — по две UTF-16 единицы каждый.
+    expect(weakSecretError("😀😁😂🤣😃😄")).toBeNull();
+    expect(weakSecretError("😀😁😂🤣😃😀")).not.toBeNull(); // 5 различных
+  });
+});
+
+describe("validatePinLocal: общие требования ко всем режимам", () => {
+  it("passphrase: пробелы, один символ и бедный алфавит", () => {
+    expect(validatePinLocal(" ".repeat(20), "passphrase")).not.toBeNull();
+    expect(validatePinLocal("z".repeat(20), "passphrase")).not.toBeNull();
+    expect(validatePinLocal("ababababababababab", "passphrase")).not.toBeNull();
+    expect(validatePinLocal("пароль с пробелами и !", "passphrase")).toBeNull();
+  });
+  it("alnum: бедный алфавит", () => {
+    expect(validatePinLocal("abababababab", "alnum")).not.toBeNull();
+    expect(validatePinLocal("aaaaaaaaaaaa", "alnum")).not.toBeNull();
+  });
+  it("digit: чередование двух цифр и одинаковые цифры", () => {
+    expect(validatePinLocal("12121212121", "digit")).not.toBeNull();
+    expect(validatePinLocal("77777777777", "digit")).not.toBeNull();
+    expect(validatePinLocal("19472856302", "digit")).toBeNull();
+  });
+});
+
+describe("secretMode", () => {
+  it("без TPM всегда мастер-пароль", () => {
+    expect(secretMode("19472856302", false)).toBe("passphrase");
+    expect(secretMode("short", false)).toBe("passphrase");
+  });
+  it("с TPM: цифры — PIN, длинное — парольная фраза, остальное — буквенно-цифровой PIN", () => {
+    expect(secretMode("19472856302", true)).toBe("digit");
+    expect(secretMode("abcd1234567", true)).toBe("alnum");
+    expect(secretMode("a long phrase with spaces", true)).toBe("passphrase");
+    expect(secretMode("", true)).toBe("alnum");
   });
 });

@@ -151,11 +151,10 @@ export function StepRecovery({ createdShares, onCreate, onComplete }: Props) {
             {errorMsg}
           </div>
           <p className="text-2xs text-white/45 leading-snug">
-            <Trans i18nKey="stepRecovery.failedHint">
-              Подробный лог: <span className="font-mono">./vault/logs/Vaultisor.log</span>
-              <br />
-              Закройте приложение и запустите снова — онбординг начнётся с нуля.
-            </Trans>
+            <Trans
+              i18nKey="stepRecovery.failedHint"
+              components={{ mono: <span className="font-mono" />, br: <br /> }}
+            />
           </p>
         </div>
       </div>
