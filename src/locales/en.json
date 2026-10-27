@@ -432,6 +432,7 @@
   "securityConfirm.action.disableRecovery": "Disabling recovery requires your PIN.",
   "securityConfirm.action.restoreBackup": "Restoring a backup replaces your records. Confirm with your PIN.",
   "securityConfirm.action.changeBackupDirectory": "Changing the backup folder requires your PIN.",
+  "securityConfirm.action.weakenSettings": "Turning off or lengthening auto-lock and clipboard clearing requires your PIN.",
   "settingsRecovery.pending": "Not confirmed",
   "settingsRecovery.pendingDesc": "Saving parts B and C was not confirmed. Create new parts and save both — the previous ones will stop working.",
   "settingsRecovery.acknowledgeError": "Could not confirm that the parts were saved",

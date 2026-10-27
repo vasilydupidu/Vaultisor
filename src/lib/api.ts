@@ -107,7 +107,8 @@ export type SecurityAction =
   | "regenerate_recovery"
   | "disable_recovery"
   | "restore_backup"
-  | "change_backup_directory";
+  | "change_backup_directory"
+  | "weaken_settings";
 
 export const apiSecurityAuthorize = (action: SecurityAction, pin: string) =>
   invoke<void>("security_authorize", { input: { action, pin } });

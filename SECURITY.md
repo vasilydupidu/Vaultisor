@@ -48,7 +48,8 @@ Vaultisor — локальное приложение без сетевой по
    не снимают. Безвозвратной блокировки нет.
 4. **Изменение политики безопасности из открытой сессии.** Смена PIN,
    Windows Hello, подтверждение копирования, FIDO2, восстановление, restore,
-   и папка резервных копий требуют свежего подтверждения PIN (и
+   папка резервных копий и ослабление настроек удобства (автоблокировка или
+   очистка буфера «никогда» либо дольше) требуют свежего подтверждения PIN (и
    Hello, если включён). Разрешение живёт только на стороне backend, выдаётся
    на одно действие, действует 2 минуты, одноразово и исчезает при
    блокировке.
@@ -208,8 +209,9 @@ not defend against, stated plainly.
    external checkpoint; rolling back files, importing a backup or moving the
    clock back does not clear it. There is no permanent lockout.
 4. **Security-policy changes from an open session.** Changing the PIN, Windows
-   Hello, copy confirmation, FIDO2, recovery, restore and the backup folder
-   all require a fresh PIN (plus Hello when enabled). The authorization
+   Hello, copy confirmation, FIDO2, recovery, restore, the backup folder and
+   weakening the convenience settings (auto-lock or clipboard clearing set to
+   never or lengthened) all require a fresh PIN (plus Hello when enabled). The authorization
    lives only in the backend, covers one action, lasts 2 minutes, is single-use
    and disappears on lock.
 5. **Moving the vault to another machine or Windows account** — including

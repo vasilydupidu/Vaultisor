@@ -47,6 +47,7 @@ pub enum SecurityAction {
     DisableRecovery,
     RestoreBackup,
     ChangeBackupDirectory,
+    WeakenSettings,
 }
 
 impl SecurityAction {
@@ -63,6 +64,7 @@ impl SecurityAction {
             SecurityAction::DisableRecovery => "disable_recovery",
             SecurityAction::RestoreBackup => "restore_backup",
             SecurityAction::ChangeBackupDirectory => "change_backup_directory",
+            SecurityAction::WeakenSettings => "weaken_settings",
         }
     }
 }

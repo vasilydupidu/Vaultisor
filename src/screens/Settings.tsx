@@ -66,11 +66,15 @@ export function Settings({ onClose, onSettingsChanged, onGeneratorChanged }: Pro
     try {
       // Сохраняются только настройки удобства. Hello и подтверждение
       // копирования применяются сразу своими командами с подтверждением PIN.
-      await apiSettingsUpdate(s);
+      // Ослабление (автоблокировка или очистка буфера «никогда» либо дольше)
+      // backend принимает только по подтверждению PIN: `authorized` спросит
+      // его, когда backend ответит AUTH_REQUIRED.
+      await authorized("weaken_settings", () => apiSettingsUpdate(s));
       onSettingsChanged(s);
       toast.success(t('settings.saved'));
       onClose();
     } catch (e) {
+      if (isAuthCancelled(e)) return;
       toast.error(sanitizeError(e, t('settings.saveError')));
     } finally {
       setSaving(false);

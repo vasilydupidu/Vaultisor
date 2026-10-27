@@ -453,3 +453,62 @@ async fn planted_staging_marker_never_deletes_a_live_vault() {
     assert!(env.opens_with_pin(PIN).await);
     assert_eq!(env.read_canary().as_deref(), Some(CANARY));
 }
+
+// ------------------------------------------------------------ настройки удобства
+
+fn convenience(autolock: u32, clipboard: u32) -> crate::commands::settings::ConvenienceSettings {
+    crate::commands::settings::ConvenienceSettings {
+        autolock_seconds: autolock,
+        clipboard_clear_seconds: clipboard,
+    }
+}
+
+#[test]
+fn only_weakening_a_convenience_setting_is_recognised() {
+    use crate::commands::settings::weakens;
+    assert!(weakens(300, 0), "«никогда» ослабляет");
+    assert!(weakens(300, 600), "дольше ослабляет");
+    assert!(!weakens(300, 60), "короче — усиление");
+    assert!(!weakens(0, 300), "из «никогда» в срок — усиление");
+    assert!(!weakens(0, 0) && !weakens(300, 300), "без изменений");
+}
+
+/// Усилить защиту можно сразу, а отключить автоблокировку или очистку буфера
+/// (и удлинить срок) — только после подтверждения PIN.
+#[tokio::test]
+async fn weakening_the_convenience_settings_needs_confirmation() {
+    let env = unlocked().await;
+    let current = env.state.settings.lock().clone();
+    let (autolock, clipboard) = (current.autolock_seconds, current.clipboard_clear_seconds);
+    assert!(autolock > 60 && clipboard > 5, "значения по умолчанию");
+
+    crate::commands::settings::update_settings(&env.state, convenience(60, 5))
+        .await
+        .expect("усиление без подтверждения");
+    for weaker in [
+        convenience(0, 5),
+        convenience(61, 5),
+        convenience(60, 0),
+        convenience(60, 6),
+    ] {
+        assert!(
+            auth_required(crate::commands::settings::update_settings(&env.state, weaker).await),
+            "ослабление требует подтверждения"
+        );
+    }
+    let kept = env.state.settings.lock().clone();
+    assert_eq!(
+        (kept.autolock_seconds, kept.clipboard_clear_seconds),
+        (60, 5)
+    );
+
+    env.authorize(SecurityAction::WeakenSettings).await;
+    crate::commands::settings::update_settings(&env.state, convenience(0, 0))
+        .await
+        .expect("после подтверждения");
+    let weakened = env.state.settings.lock().clone();
+    assert_eq!(
+        (weakened.autolock_seconds, weakened.clipboard_clear_seconds),
+        (0, 0)
+    );
+}

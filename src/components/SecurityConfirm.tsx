@@ -62,6 +62,8 @@ function actionText(t: TFunction, action: SecurityAction): string {
       return t("securityConfirm.action.restoreBackup");
     case "change_backup_directory":
       return t("securityConfirm.action.changeBackupDirectory");
+    case "weaken_settings":
+      return t("securityConfirm.action.weakenSettings");
   }
 }
 

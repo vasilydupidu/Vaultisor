@@ -432,6 +432,7 @@
   "securityConfirm.action.disableRecovery": "Отключение восстановления требует подтверждения PIN.",
   "securityConfirm.action.restoreBackup": "Восстановление из резервной копии заменит записи. Подтвердите PIN.",
   "securityConfirm.action.changeBackupDirectory": "Смена папки резервных копий требует подтверждения PIN.",
+  "securityConfirm.action.weakenSettings": "Отключение или удлинение автоблокировки и автоочистки буфера требует подтверждения PIN.",
   "settingsRecovery.pending": "Не подтверждено",
   "settingsRecovery.pendingDesc": "Сохранение частей B и C не подтверждено. Создайте новые части и сохраните обе — прежние перестанут действовать.",
   "settingsRecovery.acknowledgeError": "Не удалось подтвердить сохранение частей",

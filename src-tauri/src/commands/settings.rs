@@ -55,12 +55,27 @@ pub async fn settings_update(input: ConvenienceSettings, state: State<'_, AppSta
     update_settings(&state, input).await
 }
 
+/// Ослабляет ли новое значение настройки «0 = никогда»: отключение или
+/// увеличение срока. Усиление (короче срок, включение) подтверждения не просит.
+pub(crate) fn weakens(current: u32, new: u32) -> bool {
+    new != current && (new == 0 || (current != 0 && new > current))
+}
+
 pub(crate) async fn update_settings(state: &AppState, input: ConvenienceSettings) -> Result<()> {
     let _auth_flow = state.auth_flow.lock().await;
     let integrity_key = session_integrity_key(state)?;
     state.touch();
     let autolock = input.autolock_seconds.min(60 * 60);
     let clipboard = input.clipboard_clear_seconds.min(120);
+    // Постороннему у открытого окна достаточно сменить срок автоблокировки или
+    // очистки буфера, чтобы защита перестала работать: ослабление — только по
+    // подтверждению PIN.
+    let current = state.settings.lock().clone();
+    if weakens(current.autolock_seconds, autolock)
+        || weakens(current.clipboard_clear_seconds, clipboard)
+    {
+        security::consume(state, SecurityAction::WeakenSettings)?;
+    }
     state
         .open_meta()?
         .update_settings(&integrity_key, autolock, clipboard)?;
