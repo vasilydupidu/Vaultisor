@@ -356,10 +356,11 @@ async fn import_rebase_is_bound_to_the_imported_snapshot() {
     assert!(!meta(&env).data_rebase_pending);
 }
 
-/// Импорт старой копии на том же устройстве: подтверждённая ревизия не
-/// уменьшается, первый вход переносит базы выше неё.
+/// Импорт копии старее подтверждённого состояния на том же устройстве:
+/// подтверждённая ревизия не уменьшается, а вход требует явного решения
+/// владельца (как при подмене файлов). После него базы переносятся выше.
 #[tokio::test]
-async fn import_moves_revisions_forward_on_first_unlock() {
+async fn import_of_an_older_copy_needs_an_explicit_decision() {
     let mut env = unlocked().await;
     let backup = env.put_file("backup.vault", &env.bundle());
     for _ in 0..3 {
@@ -375,7 +376,11 @@ async fn import_moves_revisions_forward_on_first_unlock() {
     .unwrap();
     env.restart();
     assert!(confirmed(&env) >= before, "импорт не понизил ревизии");
-    env.unlock(PIN).await.expect("первый вход после импорта");
+    let snapshot = rollback_snapshot(env.unlock(PIN).await);
+    assert!(meta(&env).data_rebase_pending, "rebase ждёт решения");
+    accept(&env, snapshot)
+        .await
+        .expect("явное решение владельца");
     assert!(strictly_above(confirmed(&env), before));
     assert!(!meta(&env).data_rebase_pending);
     assert_eq!(env.read_canary().as_deref(), Some(CANARY));

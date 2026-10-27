@@ -65,7 +65,14 @@ Vaultisor — локальное приложение без сетевой по
    и отдельными страницами SQLCipher — даёт `DATA_ROLLBACK`. Продолжить со
    старыми данными можно только явным решением владельца с проверкой PIN, и
    только для показанного ему снимка; подтверждённая ревизия при этом не
-   уменьшается.
+   уменьшается. Импорт копии на этом же устройстве устроен так же: копия
+   старее подтверждённого состояния требует того же решения с PIN.
+   Копия делается без Windows Hello и подтверждения копирования и несёт
+   обёртку мастер-ключа под тем PIN, что был в её момент. Checkpoint помнит
+   включённые Hello и подтверждение копирования и хэш текущей обёртки PIN:
+   если импорт ослабил бы что-то из этого (Hello выключен, PIN с тех пор
+   менялся) или checkpoint'а нет, копия не запечатывается на этом устройстве
+   и открывается только по частям B и C.
 8. **Подделка ответов аутентификатора.** Регистрация и каждый вход FIDO2 и
    Windows Hello проверяются как у сервера WebAuthn: rpIdHash, флаги UP/UV,
    clientData (тип, challenge, origin), подпись ES256 открытым ключом из
@@ -104,10 +111,17 @@ Vaultisor — локальное приложение без сетевой по
    аппаратного счётчика (TPM NV) нельзя.
 7. **Скомпрометированные части восстановления.** Части B и C вместе дают
    доступ к мастер-ключу. Новое поколение отзывает старые части, но смены
-   мастер-ключа (перешифрования всех данных) после компрометации нет.
+   мастер-ключа (перешифрования всех данных) нет: старые части вместе со
+   старой копией хранилища открывают его, а смена PIN старые копии не
+   отзывает.
 8. **Гарантированное уничтожение импортированного CSV.** Перезапись
    случайными байтами не устраняет копии в журнале NTFS, теневых копиях и
    внутреннем пуле SSD. Это best-effort, а не шредер.
+9. **Удаление записей и очистка истории паролей без подтверждения.** Это
+   осознанное решение продукта: подтверждение требуют просмотр, копирование и
+   изменение политики безопасности, а удалённое можно вернуть из резервной
+   копии (restore требует PIN). Открытое окно в руках постороннего — граница
+   модели, как и настройки удобства (автоблокировка, очистка буфера).
 
 ### Где лежат данные
 
@@ -212,7 +226,14 @@ not defend against, stated plainly.
    the confirmed state — whole or by individual SQLCipher pages — yields
    `DATA_ROLLBACK`. Continuing with the old data takes an explicit owner
    decision with a PIN check, valid only for the snapshot that was shown; the
-   confirmed revision never decreases.
+   confirmed revision never decreases. Importing a backup on the same device
+   works the same way: a copy older than the confirmed state needs the same
+   PIN-checked decision. A backup is made without Windows Hello and copy
+   confirmation and carries the master-key wrapper under the PIN of that
+   moment. The checkpoint remembers enabled Hello and copy confirmation and the
+   hash of the current PIN wrapper: if an import would weaken any of them
+   (Hello off, PIN changed since) or there is no checkpoint, the copy is not
+   sealed on this device and opens only with parts B and C.
 8. **Forged authenticator responses.** FIDO2 and Windows Hello registration and
    every sign-in are verified the way a WebAuthn server does: rpIdHash, UP/UV
    flags, clientData (type, challenge, origin) and the ES256 signature against
@@ -250,10 +271,17 @@ not defend against, stated plainly.
    non-rollbackable hardware counter (TPM NV).
 7. **Compromised recovery parts.** Parts B and C together give access to the
    master key. A new generation revokes old parts, but there is no master-key
-   rotation (re-encrypting all data) after a compromise.
+   rotation (re-encrypting all data): old parts together with an old copy of
+   the vault open it, and a PIN change does not revoke old backups.
 8. **Guaranteed erasure of an imported CSV.** Overwriting with random bytes
    does not remove copies in the NTFS journal, shadow copies or SSD
    over-provisioned blocks. It is best-effort, not a shredder.
+9. **Deleting records and clearing the password history without
+   confirmation.** A deliberate product decision: viewing, copying and
+   security-policy changes need confirmation, and deleted data can be brought
+   back from a backup (restore needs the PIN). An open window in a stranger's
+   hands is outside the model, like the convenience settings (auto-lock,
+   clipboard clearing).
 
 ### Where data lives
 

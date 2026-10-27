@@ -191,10 +191,19 @@ pub(crate) fn open_session_with(
         (true, Some((records, web))) => records_now.1 == records && web_now.1 == web,
         _ => false,
     };
-    let rolled_back = compare(records_now, records_confirmed) == Match::RolledBack
-        || compare(web_now, web_confirmed) == Match::RolledBack
-        || (row.data_rebase_pending && !imported_intact);
-    if rolled_back && !imported_intact {
+    // Импортированные файлы дайджестом совпадают с тем, что записано под MAC
+    // при импорте, а копия делается пересозданием файла: у той же ревизии
+    // дайджест другой. Поэтому для них откат — это только меньшая ревизия.
+    let rolled_back = if imported_intact {
+        records_now.0 < records_confirmed.revision || web_now.0 < web_confirmed.revision
+    } else {
+        compare(records_now, records_confirmed) == Match::RolledBack
+            || compare(web_now, web_confirmed) == Match::RolledBack
+            || row.data_rebase_pending
+    };
+    // Импортированная копия старше подтверждённого состояния — такой же откат,
+    // как подмена файлов: без явного решения владельца она не принимается.
+    if rolled_back {
         let snapshot = snapshot_id(records_now, web_now);
         log::error!(
             "open_session: databases do not match the confirmed state (records r{} vs r{}, web r{} vs r{}, snapshot {snapshot})",

@@ -9,11 +9,13 @@ use super::schema::{Fido2KeyRow, VaultMetaRow};
 use super::MetaDb;
 
 type HmacSha256 = Hmac<Sha256>;
-const CHECKPOINT_DOMAIN: &[u8] = b"vaultisor:vault-checkpoint:v4";
+const CHECKPOINT_DOMAIN: &[u8] = b"vaultisor:vault-checkpoint:v5";
+const PIN_WRAP_DOMAIN: &[u8] = b"vaultisor:pin-wrap-digest:v1";
 const CHECKPOINT_ID_DOMAIN: &[u8] = b"vaultisor:vault-checkpoint-id:v3";
 /// epoch ‖ meta_mac ‖ failures ‖ next_allowed ‖ last_failure
-/// ‖ records (revision ‖ sha256) ‖ web (revision ‖ sha256) ‖ tag.
-const CHECKPOINT_LEN: usize = 8 + 32 + 4 + 8 + 8 + (8 + 32) * 2 + 32;
+/// ‖ records (revision ‖ sha256) ‖ web (revision ‖ sha256)
+/// ‖ hello ‖ step_up ‖ pin_wrap ‖ tag.
+const CHECKPOINT_LEN: usize = 8 + 32 + 4 + 8 + 8 + (8 + 32) * 2 + 1 + 1 + 32 + 32;
 
 /// Подтверждённое состояние базы записей или паролей сайтов.
 ///
@@ -34,6 +36,25 @@ impl DataState {
     }
 }
 
+/// Политика входа, которую импорт копии не вправе ослабить: включённый Windows
+/// Hello, подтверждение копирования и обёртка мастер-ключа под текущим PIN
+/// (её хэш: после смены PIN прежняя обёртка из старой копии — это старый PIN).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct Policy {
+    pub hello: bool,
+    pub step_up: bool,
+    pub pin_wrap: [u8; 32],
+}
+
+fn pin_wrap_digest(wrapped_master: &[u8]) -> [u8; 32] {
+    use sha2::Digest;
+    let mut hasher = Sha256::new();
+    hasher.update(PIN_WRAP_DOMAIN);
+    hasher.update((wrapped_master.len() as u64).to_le_bytes());
+    hasher.update(wrapped_master);
+    hasher.finalize().into()
+}
+
 /// Внешний checkpoint хранилища — единственный якорь против отката файлов.
 ///
 /// Лежит вне каталога хранилища (профиль пользователя, DPAPI) и подписан
@@ -48,7 +69,9 @@ impl DataState {
 ///   ни откат, ни импорт, ни восстановление из копии;
 /// - состояние `vault.records.db` и `vault.web.db` (ревизия и SHA-256 файла) —
 ///   откат баз целиком и подмена отдельных страниц. Ревизия растёт
-///   триггерами в той же транзакции, что и изменение данных.
+///   триггерами в той же транзакции, что и изменение данных;
+/// - политику входа (`Policy`): импорт копии на этом устройстве не может
+///   выключить Hello и подтверждение копирования или вернуть прежний PIN.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Anchor {
     pub epoch: u64,
@@ -56,6 +79,7 @@ pub(crate) struct Anchor {
     pub backoff: crate::auth::backoff::BackoffState,
     pub records: DataState,
     pub web: DataState,
+    pub policy: Policy,
 }
 
 /// Идентификатор checkpoint'а для integrity-ключа: HMAC, а не сам ключ.
@@ -325,6 +349,9 @@ impl MetaDb {
             body.extend_from_slice(&state.revision.to_le_bytes());
             body.extend_from_slice(&state.digest);
         }
+        body.push(anchor.policy.hello as u8);
+        body.push(anchor.policy.step_up as u8);
+        body.extend_from_slice(&anchor.policy.pin_wrap);
         body
     }
 
@@ -422,6 +449,11 @@ impl MetaDb {
                 revision: u64_at(100),
                 digest: body[108..140].try_into().expect("32 bytes"),
             },
+            policy: Policy {
+                hello: body[140] != 0,
+                step_up: body[141] != 0,
+                pin_wrap: body[142..174].try_into().expect("32 bytes"),
+            },
         })
     }
 
@@ -481,6 +513,10 @@ impl MetaDb {
     /// публикации; подпись станет недействительной, но на этом устройстве её
     /// и так никто не проверит — вход возможен лишь восстановлением по долям,
     /// которое заново создаёт ключи и подпись (`reseed`).
+    ///
+    /// Так же импортируется копия, которая на этом устройстве ослабила бы
+    /// защиту (см. `import_keeps_policy`): подпись намеренно недействительна,
+    /// и вход открывается только восстановлением по долям B и C.
     pub(crate) fn mark_unsealed_import(&self, op_id: &str) -> Result<()> {
         self.with_conn(|c| {
             c.execute(
@@ -489,6 +525,27 @@ impl MetaDb {
             )?;
             Ok(())
         })
+    }
+
+    /// Можно ли запечатать импортированные метаданные на этом устройстве.
+    ///
+    /// Копия делается со снятыми Hello и подтверждением копирования и несёт ту
+    /// обёртку мастер-ключа, что была в момент копии. Если checkpoint этого
+    /// ключа помнит включённый Hello или подтверждение копирования, либо другую
+    /// обёртку (PIN с тех пор менялся), копия вернула бы ослабленную защиту
+    /// или прежний PIN. Без checkpoint'а сравнить не с чем. В обоих случаях
+    /// ответ «нет»: вход — только по частям B и C. Подпись снимка проверяется
+    /// до сравнения.
+    pub(crate) fn import_keeps_policy(&self, integrity_key: &[u8; 32]) -> Result<bool> {
+        let _security = super::SECURITY_WRITE_LOCK.lock();
+        self.verify_meta_mac_only(integrity_key)?;
+        let Some(known) = self.read_checkpoint(integrity_key)? else {
+            return Ok(false);
+        };
+        let snapshot = self.current_anchor()?.policy;
+        Ok((!known.policy.hello || snapshot.hello)
+            && (!known.policy.step_up || snapshot.step_up)
+            && known.policy.pin_wrap == snapshot.pin_wrap)
     }
 
     /// Ревизии баз подняты выше подтверждённых после импорта: отметка о
@@ -1073,10 +1130,12 @@ impl MetaDb {
 /// Состояние метаданных, которое фиксирует checkpoint (ревизии баз — нули:
 /// их подставляет вызывающий).
 fn current_anchor_in(c: &Connection) -> Result<Anchor> {
-    let (epoch, mac, failures, next_allowed, last_failure): (i64, Vec<u8>, i64, i64, i64) = c
+    type Row = (i64, Vec<u8>, i64, i64, i64, bool, bool, Vec<u8>);
+    let (epoch, mac, failures, next_allowed, last_failure, step_up, hello, wrapped): Row = c
         .query_row(
             "SELECT security_epoch, meta_mac, failed_pin_attempts, pin_next_allowed, \
-                pin_last_failure FROM vault_meta WHERE id = 1",
+                pin_last_failure, require_auth_for_copy, use_windows_hello, \
+                wrapped_master_key FROM vault_meta WHERE id = 1",
             [],
             |row| {
                 Ok((
@@ -1085,6 +1144,9 @@ fn current_anchor_in(c: &Connection) -> Result<Anchor> {
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get::<_, i64>(5)? != 0,
+                    row.get::<_, i64>(6)? != 0,
+                    row.get(7)?,
                 ))
             },
         )?;
@@ -1098,6 +1160,11 @@ fn current_anchor_in(c: &Connection) -> Result<Anchor> {
         },
         records: DataState::default(),
         web: DataState::default(),
+        policy: Policy {
+            hello,
+            step_up,
+            pin_wrap: pin_wrap_digest(&wrapped),
+        },
     })
 }
 

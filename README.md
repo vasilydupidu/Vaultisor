@@ -85,8 +85,11 @@ TPM 2.0 (без TPM — режим мастер-пароля от 15 симво�
   можно только этим хранилищем или восстановлением по долям.
 - **Restore** в открытое хранилище возвращает только данные: PIN, Hello,
   FIDO2, восстановление и задержки PIN остаются текущими.
-- **Импорт** на чистую установку: на том же устройстве — вход по PIN, на
-  другом — только восстановлением по долям.
+- **Импорт** на чистую установку: на том же устройстве — вход по PIN, если
+  копия не ослабляет защиту (Hello и подтверждение копирования остались
+  включёнными, PIN не менялся); копия старее подтверждённого состояния
+  требует явного решения с PIN. Иначе, как и на другом устройстве, — только
+  восстановлением по частям B и C.
 - **Надёжность.** Каждая операция, меняющая хранилище, проверена отказом на
   каждом шаге записи (ошибка и смерть процесса): после любого сбоя хранилище
   целиком в старом или целиком в новом состоянии.
@@ -231,8 +234,11 @@ TPM 2.0 (without a TPM, a master password of 15+ characters is used).
   or through share recovery.
 - **Restore** into an open vault brings back data only: the PIN, Hello,
   FIDO2, recovery and PIN delay stay as they are.
-- **Import** onto a clean install: on the same device it opens with the PIN,
-  on another device only through share recovery.
+- **Import** onto a clean install: on the same device it opens with the PIN if
+  the copy does not weaken protection (Hello and copy confirmation still on,
+  PIN unchanged); a copy older than the confirmed state needs an explicit
+  PIN-checked decision. Otherwise, as on another device, it opens only through
+  recovery with parts B and C.
 - **Reliability.** Every operation that changes the vault is tested with a
   failure at every write step (both an error and process death): after any
   failure the vault is entirely in the old or entirely in the new state.

@@ -590,3 +590,77 @@ fn vlt2(meta: &[u8], records: &[u8], web: &[u8]) -> Vec<u8> {
     }
     out
 }
+
+// ------------------------------------------------------------ импорт не ослабляет защиту
+
+/// Восстановление по частям B и C после импорта, который не запечатан на этом
+/// устройстве: вход новым PIN, данные на месте.
+async fn recover_with_both_parts(env: &mut Env, shares: &Shares) {
+    crate::commands::recovery::restore_from_shares(&env.state, restore_input(shares, NEW_PIN))
+        .await
+        .expect("восстановление по B и C");
+    assert!(env.opens_with_pin(NEW_PIN).await);
+}
+
+/// Копия делается без Windows Hello, а checkpoint помнит включённый Hello:
+/// импорт на этом устройстве не вправе его выключить. Вход по PIN закрыт,
+/// остаются части B и C.
+#[tokio::test]
+async fn import_cannot_switch_off_windows_hello() {
+    let (mut env, shares) = unlocked().await;
+    env.enable_hello().await;
+    let backup = env.put_file("backup.vault", &env.bundle());
+    env.lose_live_vault();
+    import(&env, &backup).unwrap();
+    env.restart();
+    assert!(matches!(
+        env.unlock(PIN).await,
+        Err(VaultError::MetaTampered)
+    ));
+    assert!(!env.state.session.lock().is_unlocked());
+    recover_with_both_parts(&mut env, &shares).await;
+}
+
+/// Копия несёт обёртку мастер-ключа под прежним PIN: после смены PIN она
+/// возвращала бы старый PIN. Ни старый, ни новый PIN копию не открывают.
+#[tokio::test]
+async fn import_cannot_bring_back_an_old_pin() {
+    let (mut env, shares) = unlocked().await;
+    let backup = env.put_file("backup.vault", &env.bundle());
+    env.authorize(SecurityAction::ChangePin).await;
+    crate::commands::vault::change_pin(
+        &env.state,
+        crate::commands::vault::ChangePinInput {
+            new_pin: NEW_PIN.into(),
+            request_id: uuid::Uuid::new_v4().to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    env.lose_live_vault();
+    import(&env, &backup).unwrap();
+    env.restart();
+    for pin in [PIN, NEW_PIN] {
+        assert!(matches!(
+            env.unlock(pin).await,
+            Err(VaultError::MetaTampered)
+        ));
+    }
+    recover_with_both_parts(&mut env, &shares).await;
+}
+
+/// Без checkpoint'а сравнить копию не с чем: она не запечатывается.
+#[tokio::test]
+async fn import_without_a_checkpoint_needs_the_recovery_parts() {
+    let (mut env, shares) = unlocked().await;
+    let backup = env.put_file("backup.vault", &env.bundle());
+    env.lose_live_vault();
+    std::fs::remove_dir_all(env.root.join(".test-machine-checkpoints")).unwrap();
+    import(&env, &backup).unwrap();
+    env.restart();
+    assert!(matches!(
+        env.unlock(PIN).await,
+        Err(VaultError::MetaTampered)
+    ));
+    recover_with_both_parts(&mut env, &shares).await;
+}

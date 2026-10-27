@@ -68,9 +68,11 @@ pub(crate) fn vault_import_blocking(input: ImportInput, state: &AppState) -> Res
 
 /// Как импортированное хранилище будет открываться на этом устройстве.
 enum Bootstrap {
-    /// Integrity-ключ разворачивается: вход по PIN (если цел TPM-ключ).
+    /// Integrity-ключ разворачивается, и копия не ослабляет защиту: вход по PIN
+    /// (если цел TPM-ключ).
     SameDevice,
-    /// Другой компьютер или учётная запись Windows: только по долям B и C.
+    /// Другой компьютер или учётная запись Windows, либо копия ослабила бы
+    /// защиту этого устройства: вход только по долям B и C.
     RecoveryRequired,
 }
 
@@ -108,8 +110,16 @@ fn stage_import(
             .and_then(|blob| {
                 crate::commands::vault::unwrap_integrity_key(&blob, &row.dpapi_entropy)
             });
+        // Копия запечатывается на этом устройстве, только если не ослабляет
+        // защиту относительно checkpoint'а (Hello, подтверждение копирования,
+        // обёртка под текущим PIN). Иначе — как на чужом устройстве: вход лишь
+        // по частям B и C.
+        let sealable = match &integrity_key {
+            Ok(key) => db.import_keeps_policy(key)?,
+            Err(_) => false,
+        };
         match integrity_key {
-            Ok(integrity_key) => {
+            Ok(integrity_key) if sealable => {
                 let id = crate::storage::meta_db::crud::checkpoint_id(&integrity_key);
                 // Существующий checkpoint этого ключа — монотонное состояние
                 // прежнего хранилища: при неудаче импорта его удалять нельзя.
@@ -127,7 +137,7 @@ fn stage_import(
                 )?;
                 Bootstrap::SameDevice
             }
-            Err(_) => {
+            _ => {
                 db.mark_unsealed_import(journal.op_id())?;
                 Bootstrap::RecoveryRequired
             }
