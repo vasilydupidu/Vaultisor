@@ -14,6 +14,7 @@ import {
   apiSecuritySetHello,
   apiSecuritySetStepUp,
   apiSettingsGet,
+  apiSystemCheck,
   type Fido2Status,
   type Fido2KeyItem,
   type SettingsDto,
@@ -26,7 +27,7 @@ import { useToast } from "@/components/ui/Toast";
 import { isAuthCancelled, useSecurityConfirm } from "@/components/SecurityConfirm";
 import { sanitizeError } from "@/lib/sanitizeError";
 import { KeyRound, Trash2, AlertTriangle, Shield, Fingerprint } from "lucide-react";
-import { PIN_ALNUM_MAX } from "@/lib/pinRules";
+import { SECRET_MAX, secretMode, validatePinLocal } from "@/lib/pinRules";
 import { RetryableRequest } from "@/lib/requestId";
 
 interface Props {
@@ -59,6 +60,10 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [changingPin, setChangingPin] = useState(false);
+  // Без TPM новым секретом может быть только мастер-пароль (≥15 символов).
+  // Как и на экране входа, до ответа системы считаем, что TPM есть: окончательно
+  // формат проверяет backend.
+  const [tpmAvailable, setTpmAvailable] = useState(true);
   const [deletingLoading, setDeletingLoading] = useState(false);
 
   const reloadFido2Status = async () => {
@@ -74,6 +79,7 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
     apiGetEnableHealthCheck().then(setHealthCheck).catch(() => {});
     apiGetEnableGenerator().then(setGenerator).catch(() => {});
     apiGetEnablePasswordHistory().then(setPasswordHistory).catch(() => {});
+    apiSystemCheck().then((sys) => setTpmAvailable(sys.tpm_available)).catch(() => {});
     reloadFido2Status();
 
   }, []);
@@ -178,6 +184,13 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
       toast.error(t("settingsSecurity.pinsDoNotMatch"));
       return;
     }
+    // Формат проверяем до запроса подтверждения: разрешение на смену PIN
+    // одноразовое, и тратить его на заведомо неверный ввод незачем.
+    const formatError = validatePinLocal(newPin, secretMode(newPin, tpmAvailable));
+    if (formatError) {
+      toast.error(formatError);
+      return;
+    }
     setChangingPin(true);
     try {
       const requestId = pinRequest.current.idFor(newPin);
@@ -239,8 +252,8 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
           autoComplete="new-password"
           value={newPin}
           onChange={(e) => setNewPin(e.target.value)}
-          placeholder={t("settingsSecurity.newPinPrompt")}
-          maxLength={PIN_ALNUM_MAX}
+          placeholder={tpmAvailable ? t("settingsSecurity.newPinPrompt") : t("settingsSecurity.newPassPrompt")}
+          maxLength={SECRET_MAX}
           disabled={changingPin}
         />
         <Input
@@ -248,8 +261,12 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
           autoComplete="new-password"
           value={confirmPin}
           onChange={(e) => setConfirmPin(e.target.value)}
-          placeholder={t("settingsSecurity.confirmNewPinPrompt")}
-          maxLength={PIN_ALNUM_MAX}
+          placeholder={
+            tpmAvailable
+              ? t("settingsSecurity.confirmNewPinPrompt")
+              : t("settingsSecurity.confirmNewPassPrompt")
+          }
+          maxLength={SECRET_MAX}
           disabled={changingPin}
         />
         <Button
@@ -385,8 +402,8 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
                 }`}
               >
                 <Shield className="w-4 h-4 mx-auto mb-1" />
-                ПИН + Touch
-                <div className="text-[10px] mt-0.5 opacity-60">Безопаснее</div>
+                {t("settingsSecurity.fido2ModePin")}
+                <div className="text-[10px] mt-0.5 opacity-60">{t("settingsSecurity.fido2ModePinHint")}</div>
               </button>
               <button
                 type="button"
@@ -398,8 +415,8 @@ export function SettingsSecurity({ s, onSecurityChanged, onGeneratorChanged }: P
                 }`}
               >
                 <Fingerprint className="w-4 h-4 mx-auto mb-1" />
-                Touch-only
-                <div className="text-[10px] mt-0.5 opacity-60">Быстрее</div>
+                {t("settingsSecurity.fido2ModeTouch")}
+                <div className="text-[10px] mt-0.5 opacity-60">{t("settingsSecurity.fido2ModeTouchHint")}</div>
               </button>
             </div>
             <div className="flex items-center gap-2 justify-end">

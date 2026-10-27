@@ -241,7 +241,7 @@ export function RecordView({
               />
               {isWeak && (
                 <div className="text-2xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-md px-2.5 py-1.5 flex items-center gap-1.5 font-medium">
-                  ⚠️ {t('healthCheck.weak')} — пароль слишком простой или короткий (&lt;8 символов)
+                  ⚠️ {t('healthCheck.weak')} — {t('recordView.weakHint')}
                 </div>
               )}
             </div>
@@ -269,7 +269,7 @@ export function RecordView({
             <Trans
               i18nKey="recordView.deleteDesc"
               values={{ name: record.name }}
-              components={{ span: <span className="text-white" /> }}
+              components={{ accent: <span className="text-white" /> }}
             />
           </p>
           <div className="flex gap-2">

@@ -3,6 +3,7 @@ import { KeyRound, RefreshCw, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { PinKeypad } from "@/components/ui/PinKeypad";
 import { cn } from "@/lib/cn";
+import { MASTER_PASSPHRASE_ALPHABET, randomFromAlphabet } from "@/lib/generateSecret";
 import { validatePinLocal } from "@/lib/pinRules";
 import { useTranslation } from "react-i18next";
 
@@ -51,14 +52,7 @@ export function StepPin({ value, onChange, onNext, tpmAvailable }: Props) {
 
   // Генератор безопасных мастер-паролей (15 символов)
   const generatePassphrase = () => {
-    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=";
-    let pass = "";
-    const bytes = new Uint8Array(PASS_MIN);
-    crypto.getRandomValues(bytes);
-    for (let i = 0; i < PASS_MIN; i++) {
-      pass += chars[bytes[i]! % chars.length];
-    }
-    onChange(pass);
+    onChange(randomFromAlphabet(MASTER_PASSPHRASE_ALPHABET, PASS_MIN));
     setError(null);
   };
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateSecret } from "./generateSecret";
+import { MASTER_PASSPHRASE_ALPHABET, generateSecret, randomFromAlphabet } from "./generateSecret";
 
 describe("generateSecret", () => {
   it("возвращает значение точной длины", () => {
@@ -59,5 +59,59 @@ describe("generateSecret", () => {
     // (около 132 при p=0.001), чтобы тест не мигал на честной случайности.
     // Смещение от взятия остатка даёт значения на порядки больше.
     expect(chiSquare).toBeLessThan(alphabet * 2.5);
+  });
+});
+
+describe("randomFromAlphabet", () => {
+  // Длина алфавита не делит 256, поэтому простое `байт % N` завышало бы
+  // вероятность первых (256 mod N) символов.
+  const ALPHABET = MASTER_PASSPHRASE_ALPHABET;
+  const N = ALPHABET.length;
+  const ACCEPTED = Math.floor(256 / N) * N; // принимаются байты 0..ACCEPTED-1
+
+  /** Детерминированный поток: подряд все значения байта 0..255, по кругу. */
+  const sequentialFill = () => {
+    let next = 0;
+    return (buf: Uint8Array) => {
+      for (let i = 0; i < buf.length; i++) buf[i] = next++ & 0xff;
+    };
+  };
+
+  it("алфавит не делит 256 (иначе тест ничего не проверяет)", () => {
+    expect(256 % N).not.toBe(0);
+  });
+
+  it("равномерен на полных проходах по значениям байта", () => {
+    // За один проход по 0..255 принимается ровно ACCEPTED байт, то есть
+    // каждый символ встречается floor(256 / N) раз; без отбраковки первые
+    // (256 mod N) символов встречались бы на раз чаще.
+    const perChar = Math.floor(256 / N);
+    const passes = 5;
+    const out = randomFromAlphabet(ALPHABET, ACCEPTED * passes, sequentialFill());
+    const counts = new Map<string, number>();
+    for (const ch of out) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+    expect(counts.size).toBe(N);
+    for (const ch of ALPHABET) expect(counts.get(ch)).toBe(perChar * passes);
+  });
+
+  it("отбрасывает байты от наибольшего кратного длины алфавита и добирает новые", () => {
+    // Сначала только отбракованные ACCEPTED..255, затем 0, 1, 2.
+    const stream = [
+      ...Array.from({ length: 256 - ACCEPTED }, (_, i) => ACCEPTED + i),
+      0,
+      1,
+      2,
+    ];
+    let pos = 0;
+    const fill = (buf: Uint8Array) => {
+      for (let i = 0; i < buf.length; i++) buf[i] = stream[pos++ % stream.length]!;
+    };
+    expect(randomFromAlphabet(ALPHABET, 3, fill)).toBe(ALPHABET.slice(0, 3));
+  });
+
+  it("точная длина и только символы алфавита на настоящем CSPRNG", () => {
+    const out = randomFromAlphabet(ALPHABET, 500);
+    expect(out.length).toBe(500);
+    for (const ch of out) expect(ALPHABET.includes(ch)).toBe(true);
   });
 });

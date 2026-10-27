@@ -23,20 +23,43 @@ export const CHARSET_LABELS: Record<Charset, string> = {
 
 export const CHARSET_ORDER: Charset[] = ["alnumSymbols", "alnum", "hex", "base64url"];
 
-export function generateSecret(length: number, charset: Charset): string {
-  const chars = CHARSETS[charset];
-  const n = chars.length;
+/** Алфавит генератора мастер-пароля при онбординге (без TPM). */
+export const MASTER_PASSPHRASE_ALPHABET =
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=";
+
+/** Источник случайных байт: заполняет переданный буфер (как crypto.getRandomValues). */
+export type RandomFill = (buf: Uint8Array) => void;
+
+const cryptoFill: RandomFill = (buf) => {
+  crypto.getRandomValues(buf);
+};
+
+/**
+ * Строка заданной длины из символов алфавита без смещения: байты начиная с
+ * наибольшего кратного длины алфавита не берутся, а добираются новые.
+ * `fill` подменяют только в тестах.
+ */
+export function randomFromAlphabet(
+  alphabet: string,
+  length: number,
+  fill: RandomFill = cryptoFill,
+): string {
+  const n = alphabet.length;
   // Порог для отбраковки: убирает смещение при n, не делящем 256.
   const max = Math.floor(256 / n) * n;
   const out: string[] = [];
   const buf = new Uint8Array(64);
   while (out.length < length) {
-    crypto.getRandomValues(buf);
+    fill(buf);
     for (let i = 0; i < buf.length && out.length < length; i++) {
       const b = buf[i]!;
       if (b >= max) continue; // rejection sampling
-      out.push(chars[b % n]!);
+      out.push(alphabet[b % n]!);
     }
   }
   return out.join("");
+}
+
+export function generateSecret(length: number, charset: Charset): string {
+  return randomFromAlphabet(CHARSETS[charset], length);
 }

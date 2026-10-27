@@ -15,6 +15,22 @@ describe("sanitizeError", () => {
     expect(sanitizeError("PIN_BACKOFF: Повторите через 30 с.")).toBe("Повторите через 30 с.");
   });
 
+  it("снимает код вместе со вторым служебным сегментом", () => {
+    expect(sanitizeError("AUTH_REQUIRED:change_pin: Подтвердите PIN для этого действия")).toBe(
+      "Подтвердите PIN для этого действия",
+    );
+    const snapshot = "0123456789abcdef0123456789abcdef";
+    expect(sanitizeError(`DATA_ROLLBACK:${snapshot}: Базы старее подтверждённых`)).toBe(
+      "Базы старее подтверждённых",
+    );
+    expect(sanitizeError(new Error(`DATA_ROLLBACK:${snapshot}: Откат`))).toBe("Откат");
+  });
+
+  it("не отрезает второй сегмент у остальных кодов", () => {
+    expect(sanitizeError("LOCKED: проверьте: ввод")).toBe("проверьте: ввод");
+    expect(sanitizeError("AUTH_REQUIRED:change_pin:")).toBe("sanitizeError.defaultMessage");
+  });
+
   it("оставляет сообщение без префикса как есть", () => {
     expect(sanitizeError("Запись не найдена")).toBe("Запись не найдена");
   });
