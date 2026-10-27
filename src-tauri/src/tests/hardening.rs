@@ -547,3 +547,19 @@ async fn copy_gate_refuses_tampered_credential_row() {
         "{result:?}"
     );
 }
+
+/// Вход по PIN в неполное хранилище объясняет, что делать, и не создаёт
+/// пустые метаданные на месте пропавших.
+#[tokio::test]
+async fn pin_unlock_of_an_incomplete_vault_explains_the_problem() {
+    let (mut env, _) = created().await;
+    env.state.lock();
+    std::fs::remove_file(env.state.meta_path()).unwrap();
+    env.restart();
+    let error = env.unlock(PIN).await.unwrap_err();
+    assert!(
+        matches!(error, VaultError::BadInput(_)),
+        "понятная ошибка, а не {error:?}"
+    );
+    assert!(!env.state.meta_path().exists(), "пустая meta не создаётся");
+}

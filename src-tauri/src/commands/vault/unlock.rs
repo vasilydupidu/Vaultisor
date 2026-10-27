@@ -156,6 +156,9 @@ pub(crate) async fn unlock_with_pin_policy(
     rollback: DataRollback,
 ) -> Result<()> {
     let _auth_flow = state.auth_flow.lock().await;
+    // До открытия метаданных: при пропавшем файле открытие создало бы пустую
+    // базу, а вход закончился бы безликой ошибкой.
+    crate::commands::system::require_complete_vault(state)?;
     let db = state.open_meta()?;
     let (integrity_key, meta) = verified_meta(&db)?;
     let master = verify_pin(state, &db, &meta, &integrity_key, &input.pin).await?;
