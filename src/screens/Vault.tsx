@@ -164,7 +164,7 @@ export function VaultScreen({ onLock }: Props) {
 
   const handleCopy = async (recordId: string, fieldId: string) => {
     try {
-      await apiClipboardCopy(dbType, recordId, fieldId, settings?.clipboard_clear_seconds);
+      await apiClipboardCopy(dbType, recordId, fieldId);
       toast.success(
         settings?.clipboard_clear_seconds
           ? t('vault.copiedClear', { seconds: settings.clipboard_clear_seconds })

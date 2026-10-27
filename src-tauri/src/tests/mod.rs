@@ -3,6 +3,7 @@
 mod atomicity;
 mod coverage;
 mod data_flow;
+mod hardening;
 mod harness;
 mod idempotency;
 mod invariants;

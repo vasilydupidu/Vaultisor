@@ -34,9 +34,32 @@ pub type RevisionSink = Box<dyn Fn(u64, [u8; 32]) -> Result<()> + Send + Sync>;
 
 /// SHA-256 файла базы. Вместе с ревизией — подтверждаемое состояние: ревизия
 /// ловит замену файла целиком, дайджест — подмену отдельных страниц.
+///
+/// Файл читается блоками фиксированного размера: дайджест считается на каждый
+/// commit, и держать в памяти всю базу ради хэша незачем.
 pub fn file_digest(path: &Path) -> Result<[u8; 32]> {
     use sha2::{Digest, Sha256};
-    Ok(Sha256::digest(std::fs::read(path)?).into())
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher.finalize().into())
+}
+
+/// Итог проверки паролей по всей базе: только идентификаторы записей.
+/// Значений секретов и их меток здесь нет, поэтому кэш не расширяет то, что
+/// остаётся в памяти после списка.
+#[derive(Default)]
+pub(crate) struct HealthFlags {
+    pub weak: std::collections::HashSet<String>,
+    pub reused: std::collections::HashSet<String>,
 }
 
 /// Ревизия базы для защиты от отката.
@@ -54,6 +77,13 @@ pub struct RecordsDb {
     /// Последняя ревизия, переданная в `sink`.
     confirmed: AtomicU64,
     sink: Mutex<Option<RevisionSink>>,
+    /// Результат проверки паролей для ревизии базы. Ревизия растёт триггером
+    /// при любой записи, поэтому устаревший кэш не совпадёт с ней и не будет
+    /// использован. Живёт внутри базы и уходит вместе с ней при блокировке.
+    health: Mutex<Option<(u64, std::sync::Arc<HealthFlags>)>>,
+    /// Сколько раз проверка паролей реально расшифровывала базу.
+    #[cfg(test)]
+    health_runs: AtomicU64,
 }
 
 impl RecordsDb {
@@ -136,6 +166,9 @@ impl RecordsDb {
             path: path.to_path_buf(),
             confirmed: AtomicU64::new(0),
             sink: Mutex::new(None),
+            health: Mutex::new(None),
+            #[cfg(test)]
+            health_runs: AtomicU64::new(0),
         })
     }
 
@@ -178,6 +211,26 @@ impl RecordsDb {
     pub fn revision(&self) -> Result<u64> {
         let g = self.conn.lock();
         read_revision(&g)
+    }
+
+    /// Готовый результат проверки паролей, если он снят на этой ревизии.
+    pub(crate) fn cached_health(&self, revision: u64) -> Option<std::sync::Arc<HealthFlags>> {
+        match &*self.health.lock() {
+            Some((cached, flags)) if *cached == revision => Some(flags.clone()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn store_health(&self, revision: u64, flags: std::sync::Arc<HealthFlags>) {
+        #[cfg(test)]
+        self.health_runs.fetch_add(1, Ordering::SeqCst);
+        *self.health.lock() = Some((revision, flags));
+    }
+
+    /// Число расшифровок базы ради проверки паролей (для тестов кэша).
+    #[cfg(test)]
+    pub(crate) fn health_runs(&self) -> u64 {
+        self.health_runs.load(Ordering::SeqCst)
     }
 
     /// Ревизия и SHA-256 файла. Пока соединение открыто, файл нельзя
@@ -339,7 +392,7 @@ fn apply_records_migrations(conn: &Connection) -> Result<()> {
     }
 }
 
-fn read_revision(conn: &Connection) -> Result<u64> {
+pub(crate) fn read_revision(conn: &Connection) -> Result<u64> {
     let revision: i64 = conn.query_row("SELECT revision FROM db_state WHERE id = 1", [], |r| {
         r.get(0)
     })?;
@@ -438,6 +491,21 @@ mod tests {
         file.write_all(&byte).unwrap();
         drop(file);
         assert!(RecordsDb::verify_snapshot(&path, &key).is_err());
+    }
+
+    #[test]
+    fn streaming_digest_equals_the_whole_file_hash() {
+        use sha2::{Digest, Sha256};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("blob.bin");
+        // Границы буфера и мимо них, пустой файл, многоблочный.
+        for len in [0usize, 1, 65_535, 65_536, 65_537, 200_000] {
+            let bytes: Vec<u8> = (0..len).map(|i| (i * 31 % 251) as u8).collect();
+            std::fs::write(&path, &bytes).unwrap();
+            let whole: [u8; 32] = Sha256::digest(std::fs::read(&path).unwrap()).into();
+            assert_eq!(file_digest(&path).unwrap(), whole, "длина {len}");
+        }
+        assert!(file_digest(&dir.path().join("missing")).is_err());
     }
 
     // SQLCipher-открытие ДОЛЖНО отвергать неверный ключ.

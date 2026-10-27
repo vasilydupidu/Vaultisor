@@ -48,10 +48,16 @@ pub(crate) async fn require_copy_view_auth(state: &AppState) -> Result<()> {
         }
     }
 
-    let meta = state
-        .open_meta()?
-        .vault_load()?
-        .ok_or(VaultError::NotInitialized)?;
+    // Имя и публичный ключ credential'а — это то, против чего Windows проверит
+    // подпись. Подменённая строка метаданных подсунула бы чужой ключ, поэтому
+    // подпись метаданных проверяется до того, как им верить.
+    let integrity_key = match &*state.session.lock() {
+        SessionState::Unlocked { integrity_key, .. } => integrity_key.clone(),
+        SessionState::Locked => return Err(VaultError::Locked),
+    };
+    let db = state.open_meta()?;
+    db.verify_meta_integrity(&integrity_key)?;
+    let meta = db.vault_load()?.ok_or(VaultError::NotInitialized)?;
     let name = meta
         .hello_key_credential_name
         .as_deref()

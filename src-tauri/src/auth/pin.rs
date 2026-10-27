@@ -8,6 +8,10 @@
 //! 3. Парольная фраза — от 15 символов, любые символы. На машине без TPM 2.0
 //!    это ЕДИНСТВЕННЫЙ допустимый режим: аппаратного якоря нет, поэтому вся
 //!    стойкость держится на энтропии самого пароля.
+//!
+//! Для всех режимов: не пустой и не из одних пробелов, не один повторяющийся
+//! символ, не меньше `DISTINCT_MIN` разных символов. Юникод не нормализуется:
+//! символы сравниваются как есть.
 
 use crate::error::{Result, VaultError};
 
@@ -22,6 +26,10 @@ pub const PASSPHRASE_MIN: usize = 15;
 /// но принимать мегабайтные строки из webview незачем.
 pub const SECRET_MAX: usize = 256;
 
+/// Меньше стольких разных символов секрет не принимается в любом режиме:
+/// пятнадцать «а» или «ababab…» проходят по длине, но не по энтропии.
+pub const DISTINCT_MIN: usize = 6;
+
 /// Проверить формат секрета, которым будет обёрнут мастер-ключ.
 ///
 /// `tpm_backed` — есть ли на машине TPM 2.0 и, соответственно, Device Secret.
@@ -32,6 +40,24 @@ pub fn validate_secret_format(secret: &str, tpm_backed: bool) -> Result<()> {
     if len > SECRET_MAX {
         return Err(VaultError::BadInput(format!(
             "Секрет длиннее {SECRET_MAX} символов"
+        )));
+    }
+
+    if secret.trim().is_empty() {
+        return Err(VaultError::BadInput(
+            "Секрет не может быть пустым или состоять из одних пробелов".into(),
+        ));
+    }
+    let first = secret.chars().next();
+    if secret.chars().all(|c| Some(c) == first) {
+        return Err(VaultError::BadInput(
+            "Секрет не может состоять из одного повторяющегося символа".into(),
+        ));
+    }
+    let distinct: std::collections::HashSet<char> = secret.chars().collect();
+    if distinct.len() < DISTINCT_MIN {
+        return Err(VaultError::BadInput(format!(
+            "В секрете должно быть не менее {DISTINCT_MIN} разных символов"
         )));
     }
 
@@ -158,7 +184,7 @@ mod tests {
         assert!(tpm("пароль12345").is_ok());
         assert!(tpm("abc1234567").is_err(), "10 символов — коротко");
         // 65 букв — это уже парольная фраза, а не PIN: длина приветствуется.
-        assert!(tpm(&"a".repeat(65)).is_ok());
+        assert!(tpm(&"abcdefgh".repeat(9)).is_ok());
     }
 
     #[test]
@@ -177,8 +203,8 @@ mod tests {
             "11 цифр без TPM недостаточно"
         );
         assert!(no_tpm("abcd1234567").is_err());
-        assert!(no_tpm(&"a".repeat(PASSPHRASE_MIN - 1)).is_err());
-        assert!(no_tpm(&"a".repeat(PASSPHRASE_MIN)).is_ok());
+        assert!(no_tpm(&"abcdefgh".repeat(2)[..PASSPHRASE_MIN - 1]).is_err());
+        assert!(no_tpm(&"abcdefgh".repeat(2)[..PASSPHRASE_MIN]).is_ok());
         assert!(no_tpm("my strong passphrase 2026").is_ok());
     }
 
@@ -187,7 +213,58 @@ mod tests {
         let huge = "a".repeat(SECRET_MAX + 1);
         assert!(tpm(&huge).is_err());
         assert!(no_tpm(&huge).is_err());
-        assert!(tpm(&"a".repeat(SECRET_MAX)).is_ok());
+        assert!(tpm(&"abcdefgh".repeat(SECRET_MAX / 8)).is_ok());
+    }
+
+    #[test]
+    fn whitespace_only_secrets_are_rejected() {
+        for secret in [" ".repeat(15), "\t\n \u{00a0}".repeat(5), " ".repeat(40)] {
+            assert!(tpm(&secret).is_err(), "{secret:?}");
+            assert!(no_tpm(&secret).is_err(), "{secret:?}");
+        }
+    }
+
+    #[test]
+    fn single_repeated_character_is_rejected() {
+        for secret in [
+            "a".repeat(15),
+            "а".repeat(40),
+            "1".repeat(11),
+            "!".repeat(20),
+        ] {
+            assert!(tpm(&secret).is_err(), "{secret:?}");
+            assert!(no_tpm(&secret).is_err(), "{secret:?}");
+        }
+    }
+
+    #[test]
+    fn fewer_than_six_distinct_characters_are_rejected() {
+        // Длина достаточная, разных символов 2…5.
+        for secret in [
+            "ab".repeat(10),
+            "abc".repeat(6),
+            "abcd".repeat(5),
+            "abcde".repeat(4),
+            "12121212121".to_string(),
+            "12341234123".to_string(),
+        ] {
+            assert!(tpm(&secret).is_err(), "{secret:?}");
+            assert!(no_tpm(&secret).is_err(), "{secret:?}");
+        }
+        // Ровно шесть разных символов проходит (при достаточной длине).
+        assert!(tpm("abcdefabcdefabc").is_ok());
+        assert!(no_tpm("abcdefabcdefabc").is_ok());
+        assert!(tpm("19472856302").is_ok());
+    }
+
+    #[test]
+    fn distinct_characters_are_compared_as_is_without_normalization() {
+        // «é» в составной и разложенной форме — разные последовательности
+        // символов; нормализации нет, поэтому считаются как есть.
+        let composed = "\u{00e9}".repeat(15);
+        assert!(tpm(&composed).is_err());
+        let mixed = "e\u{0301}x\u{0301}abcd".repeat(4);
+        assert!(tpm(&mixed).is_ok());
     }
 
     #[test]

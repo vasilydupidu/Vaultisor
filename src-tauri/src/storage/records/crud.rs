@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::crypto::master::MasterKey;
 use crate::error::{Result, VaultError};
-use crate::storage::records_db::RecordsDb;
+use crate::storage::records_db::{read_revision, HealthFlags, RecordsDb};
 
 use super::{field_aad, field_decrypt, field_encrypt};
 use super::{FieldMeta, FieldType, Record, RecordInput};
@@ -120,72 +120,90 @@ pub fn list_records(
 
     if enable_health {
         if let Some(m) = master {
-            let secret_fields: Vec<(String, String, String, Vec<u8>)> = db.with_conn(|c| {
-                let mut stmt = c.prepare(
-                    "SELECT record_id, id, field_type, value_blob FROM fields \
-                     WHERE is_secret = 1 OR field_type = 'secret'",
-                )?;
-                let rows = stmt.query_map([], |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, Vec<u8>>(3)?,
-                    ))
-                })?;
-                let mut res = Vec::new();
-                for r in rows.flatten() {
-                    res.push(r);
-                }
-                Ok(res)
-            })?;
-
-            // Раньше все расшифрованные секреты обеих баз
-            // складывались в HashMap<String, _> и Vec<(String, String)> и
-            // дропались без зачистки — весь набор паролей оставался в куче
-            // после каждого вызова списка (в т.ч. на каждый символ поиска).
-            // Теперь plaintext живёт только внутри итерации (Zeroizing), а для
-            // поиска повторов используется метка на основе процесс-локального
-            // случайного ключа: она не является словарным оракулом в дампе.
-            use std::collections::HashMap;
-            let mut weak_records = std::collections::HashSet::new();
-            let mut val_counts: HashMap<[u8; 32], usize> = HashMap::new();
-            let mut rec_secrets: Vec<(String, [u8; 32])> = Vec::new();
-
-            for (rid, fid, ft_s, blob) in secret_fields {
-                let ft = FieldType::parse(&ft_s).unwrap_or(FieldType::Secret);
-                let aad = field_aad(&rid, &fid, ft);
-                if let Ok(val) = field_decrypt(m, &blob, &aad) {
-                    if is_secret_weak(&val) {
-                        weak_records.insert(rid.clone());
-                    }
-                    let tag = reuse_tag(val.as_bytes());
-                    *val_counts.entry(tag).or_insert(0) += 1;
-                    rec_secrets.push((rid, tag));
-                }
-            }
-
-            let reused_vals: std::collections::HashSet<[u8; 32]> = val_counts
-                .into_iter()
-                .filter(|(_, count)| *count > 1)
-                .map(|(tag, _)| tag)
-                .collect();
-
-            let mut reused_records = std::collections::HashSet::new();
-            for (rid, tag) in rec_secrets {
-                if reused_vals.contains(&tag) {
-                    reused_records.insert(rid);
-                }
-            }
-
+            let flags = health_flags(db, m)?;
             for rec in &mut records {
-                rec.has_weak = weak_records.contains(&rec.id);
-                rec.has_reused = reused_records.contains(&rec.id);
+                rec.has_weak = flags.weak.contains(&rec.id);
+                rec.has_reused = flags.reused.contains(&rec.id);
             }
         }
     }
 
     Ok(records)
+}
+
+/// Слабые и повторяющиеся пароли по всей базе.
+///
+/// Расшифровка каждого секрета дорога, а список запрашивается на каждый
+/// символ поиска, поэтому итог кэшируется на ревизии базы: любая запись
+/// увеличивает её триггером, и кэш сам перестаёт совпадать. В кэше только
+/// идентификаторы записей; plaintext живёт внутри итерации (Zeroizing), а для
+/// поиска повторов используется метка на основе процесс-локального случайного
+/// ключа, не являющаяся словарным оракулом в дампе.
+fn health_flags(db: &RecordsDb, m: &MasterKey) -> Result<std::sync::Arc<HealthFlags>> {
+    let current = db.revision()?;
+    if let Some(hit) = db.cached_health(current) {
+        return Ok(hit);
+    }
+    // Ревизия и секреты читаются под одной блокировкой соединения: кэш не
+    // получит ревизию, не соответствующую прочитанным данным.
+    let (revision, secret_fields) = db.with_conn(|c| {
+        let revision = read_revision(c)?;
+        let mut stmt = c.prepare(
+            "SELECT record_id, id, field_type, value_blob FROM fields \
+             WHERE is_secret = 1 OR field_type = 'secret'",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Vec<u8>>(3)?,
+            ))
+        })?;
+        let mut res = Vec::new();
+        for r in rows.flatten() {
+            res.push(r);
+        }
+        Ok((revision, res))
+    })?;
+
+    use std::collections::HashMap;
+    let mut weak_records = std::collections::HashSet::new();
+    let mut val_counts: HashMap<[u8; 32], usize> = HashMap::new();
+    let mut rec_secrets: Vec<(String, [u8; 32])> = Vec::new();
+
+    for (rid, fid, ft_s, blob) in secret_fields {
+        let ft = FieldType::parse(&ft_s).unwrap_or(FieldType::Secret);
+        let aad = field_aad(&rid, &fid, ft);
+        if let Ok(val) = field_decrypt(m, &blob, &aad) {
+            if is_secret_weak(&val) {
+                weak_records.insert(rid.clone());
+            }
+            let tag = reuse_tag(val.as_bytes());
+            *val_counts.entry(tag).or_insert(0) += 1;
+            rec_secrets.push((rid, tag));
+        }
+    }
+
+    let reused_vals: std::collections::HashSet<[u8; 32]> = val_counts
+        .into_iter()
+        .filter(|(_, count)| *count > 1)
+        .map(|(tag, _)| tag)
+        .collect();
+
+    let mut reused_records = std::collections::HashSet::new();
+    for (rid, tag) in rec_secrets {
+        if reused_vals.contains(&tag) {
+            reused_records.insert(rid);
+        }
+    }
+
+    let flags = std::sync::Arc::new(HealthFlags {
+        weak: weak_records,
+        reused: reused_records,
+    });
+    db.store_health(revision, flags.clone());
+    Ok(flags)
 }
 
 /// Сохранить пользовательский порядок записей. Присваивает `sort_order`
@@ -402,7 +420,45 @@ pub fn create_records(
     })
 }
 
+/// Положить прежнее значение поля в историю и оставить не более 10 записей.
+///
+/// Любая ошибка (шифрование, вставка, подрезка) уходит вызывающему: он держит
+/// транзакцию, и обновление не должно пройти без записи в историю, о которой
+/// пользователь рассчитывает.
+fn archive_value(
+    tx: &rusqlite::Transaction<'_>,
+    master: &MasterKey,
+    record_id: &str,
+    field_id: &str,
+    label: &str,
+    value: &str,
+    now: &str,
+) -> Result<()> {
+    let hist_id = Uuid::new_v4().to_string();
+    let hist_aad = super::history_aad(record_id, &hist_id);
+    let enc_hist = field_encrypt(master, value.as_bytes(), &hist_aad)?;
+    tx.execute(
+        "INSERT INTO record_password_history \
+         (id, record_id, field_id, field_label, encrypted_value, created_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![hist_id, record_id, field_id, label, enc_hist, now],
+    )?;
+    tx.execute(
+        "DELETE FROM record_password_history \
+         WHERE record_id = ?1 AND id NOT IN ( \
+            SELECT id FROM record_password_history \
+            WHERE record_id = ?1 ORDER BY created_at DESC LIMIT 10 \
+         )",
+        params![record_id],
+    )?;
+    Ok(())
+}
+
 /// Полная замена записи (используется как UPDATE).
+///
+/// Идентификатор поля из запроса принимается только для поля, которое уже
+/// есть у этой записи. Любой другой (в том числе чужой, принадлежащий другой
+/// записи) считается новым полем и получает идентификатор, созданный здесь.
 pub fn update_record(
     db: &RecordsDb,
     master: &MasterKey,
@@ -412,6 +468,16 @@ pub fn update_record(
 ) -> Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
     validate_record_input(input)?;
+    // Один идентификатор дважды в запросе — два изменения одного поля: какое
+    // из них победит, было бы делом порядка в массиве.
+    let mut seen = std::collections::HashSet::new();
+    for id in input.fields.iter().filter_map(|f| f.id.as_deref()) {
+        if !seen.insert(id) {
+            return Err(VaultError::BadInput(
+                "duplicate field id in one request".into(),
+            ));
+        }
+    }
     db.with_conn(|c| {
         let tx = c.unchecked_transaction()?;
 
@@ -440,16 +506,34 @@ pub fn update_record(
         )?;
 
         // Стратегия для полей:
-        //  - Поля с `id` — UPDATE.
-        //  - Поля без `id` — INSERT.
-        //  - Поля, отсутствующие во входе → DELETE.
-        let incoming_ids: Vec<String> = input.fields.iter().filter_map(|f| f.id.clone()).collect();
+        //  - поле с `id` этой записи — UPDATE;
+        //  - поле без `id` или с чужим — INSERT под новым серверным id;
+        //  - поля, отсутствующие во входе → DELETE.
+        let existing_ids: std::collections::HashSet<String> = {
+            let mut stmt = tx.prepare("SELECT id FROM fields WHERE record_id = ?1")?;
+            let rows = stmt.query_map(params![record_id], |r| r.get::<_, String>(0))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        // (id поля, существует ли оно уже) для каждого поля запроса.
+        let resolved: Vec<(String, bool)> = input
+            .fields
+            .iter()
+            .map(|f| match &f.id {
+                Some(id) if existing_ids.contains(id) => (id.clone(), true),
+                _ => (Uuid::new_v4().to_string(), false),
+            })
+            .collect();
 
         // Удаляем поля, которых нет в входе.
-        let placeholders = if incoming_ids.is_empty() {
+        let kept: Vec<&String> = resolved
+            .iter()
+            .filter(|(_, existing)| *existing)
+            .map(|(id, _)| id)
+            .collect();
+        let placeholders = if kept.is_empty() {
             "''".to_string()
         } else {
-            std::iter::repeat_n("?", incoming_ids.len())
+            std::iter::repeat_n("?", kept.len())
                 .collect::<Vec<_>>()
                 .join(",")
         };
@@ -459,16 +543,15 @@ pub fn update_record(
         );
         let mut stmt = tx.prepare(&sql)?;
         let mut args: Vec<&dyn rusqlite::ToSql> = vec![&record_id as &dyn rusqlite::ToSql];
-        for id in &incoming_ids {
-            args.push(id as &dyn rusqlite::ToSql);
+        for id in &kept {
+            args.push(*id as &dyn rusqlite::ToSql);
         }
         stmt.execute(args.as_slice())?;
         drop(stmt);
 
         // INSERT/UPDATE.
-        for f in &input.fields {
-            let field_id = f.id.clone().unwrap_or_else(|| Uuid::new_v4().to_string());
-            let aad = field_aad(record_id, &field_id, f.field_type);
+        for (f, (field_id, existing)) in input.fields.iter().zip(&resolved) {
+            let aad = field_aad(record_id, field_id, f.field_type);
 
             // Если value=None при UPDATE — оставляем существующий blob.
             let blob_bytes: Option<Vec<u8>> = if let Some(v) = &f.value {
@@ -477,13 +560,7 @@ pub fn update_record(
                 None
             };
 
-            // upsert.
-            let already: i64 = tx.query_row(
-                "SELECT COUNT(*) FROM fields WHERE id = ?1 AND record_id = ?2",
-                params![field_id, record_id],
-                |r| r.get(0),
-            )?;
-            if already == 0 {
+            if !*existing {
                 let blob = blob_bytes
                     .ok_or_else(|| VaultError::BadInput("new field requires value".into()))?;
                 tx.execute(
@@ -504,41 +581,28 @@ pub fn update_record(
             } else if let Some(blob) = blob_bytes {
                 // Если поле секретное — сохраняем старое значение в историю перед записью
                 if enable_password_history && (f.is_secret || f.field_type == FieldType::Secret) {
-                    if let Ok(Some((old_ft_str, old_blob))) = tx
-                        .query_row(
-                            "SELECT field_type, value_blob FROM fields WHERE id = ?1 AND record_id = ?2",
-                            params![field_id, record_id],
-                            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?)),
-                        )
-                        .optional()
-                    {
-                        if let Ok(old_ft) = FieldType::parse(&old_ft_str) {
-                            let old_aad = field_aad(record_id, &field_id, old_ft);
-                            if let Ok(old_val_str) = field_decrypt(master, &old_blob, &old_aad) {
-                                if let Some(new_val) = &f.value {
-                                    if old_val_str.as_str() != new_val && !old_val_str.is_empty() {
-                                        let hist_id = Uuid::new_v4().to_string();
-                                        let hist_aad = super::history_aad(record_id, &hist_id);
-                                        if let Ok(enc_hist) = field_encrypt(master, old_val_str.as_bytes(), &hist_aad) {
-                                            let _ = tx.execute(
-                                                "INSERT INTO record_password_history \
-                                                 (id, record_id, field_id, field_label, encrypted_value, created_at) \
-                                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                                                params![hist_id, record_id, field_id, f.label, enc_hist, now],
-                                            );
-                                            // Храним не более 10 записей на запись
-                                            let _ = tx.execute(
-                                                "DELETE FROM record_password_history \
-                                                 WHERE record_id = ?1 AND id NOT IN ( \
-                                                    SELECT id FROM record_password_history \
-                                                    WHERE record_id = ?1 ORDER BY created_at DESC LIMIT 10 \
-                                                 )",
-                                                params![record_id],
-                                            );
-                                        }
-                                    }
+                    let (old_ft_str, old_blob): (String, Vec<u8>) = tx.query_row(
+                        "SELECT field_type, value_blob FROM fields WHERE id = ?1 AND record_id = ?2",
+                        params![field_id, record_id],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )?;
+                    let old_ft = FieldType::parse(&old_ft_str)?;
+                    let old_aad = field_aad(record_id, field_id, old_ft);
+                    // Нечитаемое прежнее значение (повреждённый шифротекст)
+                    // не должно мешать записать новое: иначе испорченное поле
+                    // нельзя было бы исправить. Архивировать там нечего.
+                    match field_decrypt(master, &old_blob, &old_aad) {
+                        Ok(old) => {
+                            if let Some(new_val) = &f.value {
+                                if old.as_str() != new_val && !old.is_empty() {
+                                    archive_value(
+                                        &tx, master, record_id, field_id, &f.label, &old, &now,
+                                    )?;
                                 }
                             }
+                        }
+                        Err(error) => {
+                            log::warn!("update_record: previous value is unreadable ({error})");
                         }
                     }
                 }
@@ -576,7 +640,7 @@ pub fn update_record(
                     let value = field_decrypt(
                         master,
                         &old_blob,
-                        &field_aad(record_id, &field_id, old_type),
+                        &field_aad(record_id, field_id, old_type),
                     )?;
                     field_encrypt(master, value.as_bytes(), &aad)?
                 };
@@ -684,18 +748,7 @@ pub fn restore_password_history(
         if enable_password_history {
             if let Ok(current) = field_decrypt(master, &current_blob, &aad) {
                 if current.as_str() != restored.as_str() && !current.is_empty() {
-                    let archive_id = Uuid::new_v4().to_string();
-                    let archive_aad = super::history_aad(record_id, &archive_id);
-                    if let Ok(encrypted) = field_encrypt(master, current.as_bytes(), &archive_aad) {
-                        tx.execute(
-                            "INSERT INTO record_password_history                              (id, record_id, field_id, field_label, encrypted_value, created_at)                              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                            params![archive_id, record_id, field_id, label, encrypted, now],
-                        )?;
-                        tx.execute(
-                            "DELETE FROM record_password_history                              WHERE record_id = ?1 AND id NOT IN (                                 SELECT id FROM record_password_history                                 WHERE record_id = ?1 ORDER BY created_at DESC LIMIT 10                              )",
-                            params![record_id],
-                        )?;
-                    }
+                    archive_value(&tx, master, record_id, &field_id, &label, &current, &now)?;
                 }
             }
         }

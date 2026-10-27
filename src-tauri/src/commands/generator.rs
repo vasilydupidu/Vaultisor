@@ -73,9 +73,14 @@ pub fn generator_limits() -> GeneratorLimits {
 /// офлайновое и между запусками ничего не делает, а список открывают тогда же,
 /// когда генератор нужен.
 #[tauri::command]
-pub fn generator_list(state: State<'_, AppState>) -> Result<Vec<GeneratedSecretMeta>> {
-    require_enabled(&state)?;
-    with_unlocked(&state, |_master, db| {
+pub async fn generator_list(state: State<'_, AppState>) -> Result<Vec<GeneratedSecretMeta>> {
+    let state = state.inner().clone();
+    crate::blocking::run(move || list_generated(&state)).await
+}
+
+pub(crate) fn list_generated(state: &AppState) -> Result<Vec<GeneratedSecretMeta>> {
+    require_enabled(state)?;
+    with_unlocked(state, |_master, db| {
         let removed = generated::purge_expired(db)?;
         if removed > 0 {
             log::info!("generator_list: purged {removed} expired secret(s)");
@@ -92,11 +97,12 @@ pub struct GeneratorCreateInput {
 }
 
 #[tauri::command]
-pub fn generator_create(
+pub async fn generator_create(
     input: GeneratorCreateInput,
     state: State<'_, AppState>,
 ) -> Result<GeneratedSecretMeta> {
-    create_generated(&state, input)
+    let state = state.inner().clone();
+    crate::blocking::run(move || create_generated(&state, input)).await
 }
 
 pub(crate) fn create_generated(
@@ -116,8 +122,12 @@ pub struct GeneratorDeleteInput {
 }
 
 #[tauri::command]
-pub fn generator_delete(input: GeneratorDeleteInput, state: State<'_, AppState>) -> Result<usize> {
-    delete_generated(&state, input)
+pub async fn generator_delete(
+    input: GeneratorDeleteInput,
+    state: State<'_, AppState>,
+) -> Result<usize> {
+    let state = state.inner().clone();
+    crate::blocking::run(move || delete_generated(&state, input)).await
 }
 
 pub(crate) fn delete_generated(state: &AppState, input: GeneratorDeleteInput) -> Result<usize> {
@@ -143,6 +153,12 @@ pub async fn generator_copy(
     let clear_after = state.settings.lock().clipboard_clear_seconds;
     // Мьютекс сессии отпускается до работы с буфером: clipboard-операции
     // синхронны и держать под ними состояние незачем.
-    let secret = with_unlocked(&state, |master, db| generated::reveal(db, master, &id))?;
+    let secret = {
+        let state = state.inner().clone();
+        crate::blocking::run(move || {
+            with_unlocked(&state, |master, db| generated::reveal(db, master, &id))
+        })
+        .await?
+    };
     crate::commands::clipboard::copy_secret_text(&app, &secret, clear_after)
 }

@@ -65,6 +65,7 @@ pub async fn vault_unlock_with_fido2(state: State<'_, AppState>) -> Result<()> {
 /// токен с копией файлов на другом компьютере хранилище не открывает.
 pub(crate) async fn unlock_with_fido2(state: &AppState) -> Result<()> {
     let _auth_flow = state.auth_flow.lock().await;
+    crate::commands::system::require_complete_vault(state)?;
     let db = state.open_meta()?;
     let (integrity_key, meta) = verified_meta(&db)?;
     let keys = db.get_fido2_keys()?;
@@ -164,43 +165,35 @@ pub(crate) async fn change_pin(state: &AppState, input: ChangePinInput) -> Resul
     };
     let request_id = crate::commands::request::parse(&input.request_id)?;
     let db = state.open_meta()?;
-    let (_, meta) = verified_meta(&db)?;
+    let (verified_key, meta) = verified_meta(&db)?;
+    // Формат проверяется до изъятия разрешения: отказ из-за неподходящего PIN
+    // не должен сжигать одноразовое подтверждение, полученное ценой ввода
+    // текущего PIN.
+    crate::auth::pin::validate_secret_format(&input.new_pin, meta.crypto_version >= 2)?;
     if meta.pin_change_request_id.as_deref() == Some(request_id.as_str()) {
         // Повтор распознаётся, только если это тот же новый PIN: он обязан
         // открывать уже записанную обёртку. Иначе пользователь думал бы, что
         // задал второй PIN, а действовал бы первый.
-        let wrapped =
-            super::helpers::unwrap_master_blob(&meta.wrapped_master_dpapi, &meta.dpapi_entropy)?;
-        let params = crate::crypto::kdf::Argon2Params::from_stored(
-            meta.argon2_m_cost,
-            meta.argon2_t_cost,
-            meta.argon2_p_cost,
-        )?;
-        let device_secret = if meta.crypto_version >= 2 {
-            Some(load_device_secret(&state.os, &db).await?.1)
-        } else {
-            None
-        };
-        return match super::helpers::unwrap_master_off_thread(
-            wrapped,
-            input.new_pin.as_bytes(),
-            device_secret,
-            params,
-        )
-        .await
+        //
+        // Проверка идёт тем же путём, что и ввод PIN на экране блокировки, со
+        // списанием попытки: без этого каждый повтор был бы неограниченной
+        // попыткой угадать текущий PIN для того, у кого открыта сессия и кто
+        // знает последний request_id.
+        return match super::unlock::verify_pin(state, &db, &meta, &verified_key, &input.new_pin)
+            .await
         {
             Ok(_) => {
                 log::info!("vault_change_pin: request already applied");
                 Ok(())
             }
-            Err(_) => Err(VaultError::BadInput(
+            Err(VaultError::InvalidPin) => Err(VaultError::BadInput(
                 "Этот запрос смены PIN уже выполнен с другим значением".into(),
             )),
+            Err(other) => Err(other),
         };
     }
     security::consume(state, SecurityAction::ChangePin)?;
 
-    crate::auth::pin::validate_secret_format(&input.new_pin, meta.crypto_version >= 2)?;
     let device_secret = if meta.crypto_version >= 2 {
         Some(load_device_secret(&state.os, &db).await?.1)
     } else {

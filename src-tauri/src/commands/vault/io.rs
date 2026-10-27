@@ -43,7 +43,11 @@ pub(crate) fn vault_import_blocking(input: ImportInput, state: &AppState) -> Res
             session_stamp(&session),
         )?
     };
-    let bundle = std::fs::read(source)?;
+    let bundle = crate::commands::file_grants::read_regular_file_limited(
+        &source,
+        crate::commands::file_grants::BACKUP_FILE_MAX,
+        "Резервная копия",
+    )?;
     let (meta, records, web) = parse_bundle(&bundle)?;
     std::fs::create_dir_all(&state.data_dir)?;
 
@@ -251,7 +255,11 @@ pub(crate) fn vault_restore_blocking(input: ImportInput, state: &AppState) -> Re
         FileOperation::Restore,
         Some(session_started),
     )?;
-    let bundle = std::fs::read(source)?;
+    let bundle = crate::commands::file_grants::read_regular_file_limited(
+        &source,
+        crate::commands::file_grants::BACKUP_FILE_MAX,
+        "Резервная копия",
+    )?;
     // Метаданные копии не используются: факторы входа, восстановление и
     // задержки PIN остаются текущими.
     let (_, records, web) = parse_bundle(&bundle)?;
