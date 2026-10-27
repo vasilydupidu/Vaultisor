@@ -371,9 +371,7 @@ pub(crate) fn open_envelope(
                     "Восстановленный мастер-ключ имеет некорректную длину".into(),
                 ));
             };
-            let master = crate::crypto::master::MasterKey::new(key);
-            zeroize::Zeroize::zeroize(&mut key);
-            return Ok(master);
+            return Ok(crate::crypto::master::seal_master_key(&mut key));
         }
     }
     Err(VaultError::Recovery(
